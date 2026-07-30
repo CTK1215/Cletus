@@ -18,10 +18,10 @@ from faster_whisper import WhisperModel
 from websockets.asyncio.server import serve
 
 from brain import Brain
-from tts import Tts
+from tts import make_tts, PiperTts, ElevenLabsTts
 from text_utils import strip_markdown, clamp_for_speech
 
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 PID_FILE = Path(__file__).parent / "cletus.pid"
 
 
@@ -83,6 +83,25 @@ FILLER_LINES = (
     "Lookin' it up.",
 )
 
+# Say one of these to swap voices mid-conversation, so the two can be heard
+# back to back without a restart. Matched only on short utterances so the
+# phrase can't trip inside a longer sentence.
+VOICE_SWITCH_PHRASES = {
+    "elevenlabs": (
+        "switch to eleven labs", "switch to elevenlabs", "use eleven labs",
+        "eleven labs voice", "your real voice", "your new voice",
+    ),
+    "piper": (
+        "switch to piper", "use piper", "piper voice",
+        "your old voice", "your robot voice",
+    ),
+}
+VOICE_SWITCH_MAX_LEN = 45
+VOICE_SWITCH_CONFIRM = {
+    "elevenlabs": "Alright, this is the Eleven Labs voice. How's that sound?",
+    "piper": "Back on the local voice.",
+}
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-5s  %(message)s",
@@ -97,7 +116,7 @@ wake_model: Model | None = None
 whisper_model: WhisperModel | None = None
 audio_stream: sd.InputStream | None = None
 brain: Brain | None = None
-tts: Tts | None = None
+tts: PiperTts | ElevenLabsTts | None = None
 is_speaking: bool = False
 
 last_wake_at: float = 0.0
@@ -292,6 +311,17 @@ def audio_callback(indata, frames, time_info, status):
         return
 
 
+def _requested_backend(text: str) -> str | None:
+    """Return a TTS backend name if this utterance is a voice-switch command."""
+    s = text.strip().lower().rstrip(".!?, ")
+    if len(s) > VOICE_SWITCH_MAX_LEN:
+        return None
+    for backend, phrases in VOICE_SWITCH_PHRASES.items():
+        if any(p in s for p in phrases):
+            return backend
+    return None
+
+
 async def _speak(text: str, *, announce: bool = True) -> None:
     """Serialized TTS playback.
 
@@ -356,9 +386,17 @@ async def handle_transcription(audio_data: np.ndarray) -> None:
         await broadcast({"event": "error", "message": str(e)})
         return
 
-    if brain is None:
-        return
     if not text:
+        return
+
+    # Voice-switch commands are handled locally. No point spending a brain call
+    # on "switch to piper".
+    requested = _requested_backend(text)
+    if requested is not None:
+        await switch_tts(requested)
+        return
+
+    if brain is None:
         return
 
     await broadcast({"event": "brain-thinking"})
@@ -407,14 +445,42 @@ def load_brain() -> None:
 def load_tts() -> None:
     global tts
     try:
-        tts = Tts()
-        if tts.voice is not None:
-            log.info("tts online")
+        tts = make_tts()
+        if tts.ready:
+            log.info("tts online  backend=%s", tts.name)
         else:
-            log.warning("tts loaded but voice is None")
+            log.warning("tts loaded but not ready")
             tts = None
     except Exception as e:
         log.warning("tts offline: %s", e)
+
+
+async def switch_tts(backend: str) -> None:
+    """Swap the voice mid-conversation so the two can be compared back to back."""
+    global tts
+    current = tts.name if tts is not None else "none"
+    if current == backend:
+        await _speak("Already on that one.")
+        arm_followup()
+        return
+
+    try:
+        new = make_tts(backend)
+    except Exception as e:
+        log.error("could not switch tts to %s: %s", backend, e)
+        return
+
+    if not new.ready:
+        log.warning("backend %s is not ready, staying on %s", backend, current)
+        await _speak("That voice isn't set up yet, stayin' put.")
+        arm_followup()
+        return
+
+    tts = new
+    log.info("tts switched  %s -> %s", current, new.name)
+    await broadcast({"event": "tts-backend", "backend": new.name})
+    await _speak(VOICE_SWITCH_CONFIRM.get(backend, "Voice switched."))
+    arm_followup()
 
 
 def load_whisper() -> None:
