@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+*.log
+.env
+.env.local
+.DS_Store
+Thumbs.db
+
+# Python
+voice/venv/
+__pycache__/
+*.pyc
+
+# Runtime artifacts
+voice/cletus.pid
+logs/
+
+# Downloaded models (63MB Piper voice + wake word models, fetched on first run)
+voice/models/
