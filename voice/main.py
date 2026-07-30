@@ -39,8 +39,6 @@ def _remove_pid_file() -> None:
         pass
 
 
-_write_pid_file()
-atexit.register(_remove_pid_file)
 HOST = "127.0.0.1"
 PORT = 8765
 
@@ -481,6 +479,12 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    # Claim the PID file only when actually run as the service. Doing this at
+    # import time meant any tooling that imported this module stomped the
+    # running service's PID file and deleted it on exit, which broke the
+    # launcher's shutdown path.
+    _write_pid_file()
+    atexit.register(_remove_pid_file)
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
