@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import random
+import re
 import time
 from collections import deque
 from pathlib import Path
@@ -84,16 +85,26 @@ FILLER_LINES = (
 )
 
 # Say one of these to swap voices mid-conversation, so the two can be heard
-# back to back without a restart. Matched only on short utterances so the
-# phrase can't trip inside a longer sentence.
-VOICE_SWITCH_PHRASES = {
+# back to back without a restart. Matched only on short utterances so a phrase
+# can't trip inside a longer sentence.
+#
+# These are regexes, not literal strings, on purpose. Speech recognition does
+# not hand back what you said, it hands back what it thought you said. Real
+# transcripts of "switch to eleven labs" so far: "Switch to 11 Labs." and
+# "switch to 11 laps". Chasing exact spellings loses; matching the distinctive
+# stem and tolerating the tail wins.
+VOICE_SWITCH_PATTERNS = {
     "elevenlabs": (
-        "switch to eleven labs", "switch to elevenlabs", "use eleven labs",
-        "eleven labs voice", "your real voice", "your new voice",
+        r"eleven\s*la",                      # eleven labs / laps / lab / elevenlabs
+        r"(switch|change|use|go)\w*\s+(to\s+)?eleven\b",
+        r"your (real|new|good) voice",
+        r"the good voice",
     ),
     "piper": (
-        "switch to piper", "use piper", "piper voice",
-        "your old voice", "your robot voice",
+        r"\bpiper\b",
+        r"\bpipe\s*r\b",
+        r"your (old|robot|local) voice",
+        r"the local voice",
     ),
 }
 VOICE_SWITCH_MAX_LEN = 45
@@ -311,14 +322,30 @@ def audio_callback(indata, frames, time_info, status):
         return
 
 
+def _normalize_utterance(text: str) -> str:
+    """Flatten a transcript for phrase matching.
+
+    Whisper writes spoken numbers as digits, so "eleven labs" arrives as
+    "11 Labs". Punctuation and casing vary run to run too. Normalize all of
+    it before comparing rather than trying to list every spelling.
+    """
+    s = text.strip().lower()
+    s = re.sub(r"[^\w\s]", " ", s)          # punctuation to spaces
+    s = re.sub(r"\b11\b", "eleven", s)      # 11 -> eleven
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
+
 def _requested_backend(text: str) -> str | None:
     """Return a TTS backend name if this utterance is a voice-switch command."""
-    s = text.strip().lower().rstrip(".!?, ")
-    if len(s) > VOICE_SWITCH_MAX_LEN:
+    s = _normalize_utterance(text)
+    if not s or len(s) > VOICE_SWITCH_MAX_LEN:
         return None
-    for backend, phrases in VOICE_SWITCH_PHRASES.items():
-        if any(p in s for p in phrases):
-            return backend
+    for backend, patterns in VOICE_SWITCH_PATTERNS.items():
+        for pat in patterns:
+            if re.search(pat, s):
+                log.info("voice-switch matched %r -> %s", text, backend)
+                return backend
     return None
 
 

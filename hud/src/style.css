@@ -267,17 +267,7 @@ body.state-thinking .op-body { animation: op-think 1.6s ease-in-out infinite; }
 }
 body.state-speaking .op-body { animation: op-speak 0.42s ease-in-out infinite; }
 
-/* MONITOR pulse: gentle brightness cycle on center monitors when speaking */
-@keyframes monitor-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.72; }
-}
-body.state-speaking .mon-2 rect:first-child,
-body.state-speaking .mon-3 rect:first-child {
-  animation: monitor-pulse 0.7s ease-in-out infinite;
-}
-
-/* -------- AMBIENT PHASE 2 ANIMATIONS -------- */
+/* -------- AMBIENT ANIMATIONS -------- */
 
 /* PCB node terminals: slow soft blink */
 @keyframes node-blink {
@@ -297,27 +287,13 @@ body.state-speaking .mon-3 rect:first-child {
 #pcb-traces circle:nth-of-type(7) { animation-delay: 2.4s; }
 #pcb-traces circle:nth-of-type(8) { animation-delay: 2.8s; }
 
-/* Wall bloom breathe */
-@keyframes wall-breathe {
-  0%, 100% { opacity: 0.18; }
-  50%      { opacity: 0.32; }
-}
-#monitor-arc ellipse {
-  animation: wall-breathe 5s ease-in-out infinite;
-}
-
-/* PRE-LAUNCH warning tag: slow blink */
+/* Status tag blink (PRE-LAUNCH, 6MO TARGET) */
 @keyframes warn-blink {
   0%, 55%, 100% { opacity: 1; }
   60%, 90%      { opacity: 0.35; }
 }
-.mon-1 text:nth-of-type(2) {
-  animation: warn-blink 3.2s ease-in-out infinite;
-}
-.mon-3 text:nth-of-type(2) {
-  animation: warn-blink 3.2s ease-in-out infinite;
-  animation-delay: 1.1s;
-}
+.mon-1 .tag { animation: warn-blink 3.2s ease-in-out infinite; }
+.mon-3 .tag { animation: warn-blink 3.2s ease-in-out infinite; animation-delay: 1.1s; }
 
 /* Signal packet intensity: slow pulse on all flowing signals */
 @keyframes signal-glow {
@@ -340,32 +316,14 @@ body.state-speaking .mon-3 rect:first-child {
 .mon-3 .screen { animation-delay: 2.4s; }
 .mon-4 .screen { animation-delay: 3.6s; }
 
-/* Operator head: subtle "processing" pulse on stroke color */
+/* Operator contour lines shift green while he's working things out */
 @keyframes op-head-glow {
   0%, 100% { stroke: #3ee0ff; }
   50%      { stroke: #7fffb9; }
 }
-body.state-thinking #operator ellipse {
+body.state-thinking #operator .edge {
   animation: op-head-glow 1.4s ease-in-out infinite;
 }
-
-/* -------- PHASE 5: STATE-DRIVEN SCENE ANIMATIONS -------- */
-
-/* Waveform overlay: hidden by default, shown when speaking */
-.waveform-overlay { display: none; }
-.waveform-overlay .wf-bar {
-  fill: #3ee0ff;
-  opacity: 0.9;
-  filter: drop-shadow(0 0 2px rgba(62, 224, 255, 0.7));
-  transform-origin: center;
-  transform-box: fill-box;
-}
-body.state-speaking .waveform-overlay { display: block; }
-
-/* Hide the Wendell content while waveform is active (waveform takes over the center monitor) */
-body.state-speaking .mon-3 .wendell-num,
-body.state-speaking .mon-3 text:nth-of-type(3),
-body.state-speaking .mon-3 text:nth-of-type(4) { opacity: 0; transition: opacity 0.2s ease; }
 
 /* Waveform bar dance: each bar scales its height with a staggered rhythm */
 @keyframes wf-bounce {
@@ -444,28 +402,234 @@ body.state-speaking  #state-label {
 /* Set body[data-focus="nursetrack|unshackled|wendell|cletus"] to highlight that project.
    Room accent shifts to that project's color. */
 
-/* NurseTrack focus: amber accents */
-body[data-focus="nursetrack"] .mon-1 rect:first-child {
+body[data-focus] .monitor .bezel { opacity: 0.55; transition: opacity 0.4s ease; }
+
+body[data-focus="nursetrack"] .mon-1 .bezel,
+body[data-focus="unshackled"] .mon-2 .bezel,
+body[data-focus="wendell"]    .mon-3 .bezel,
+body[data-focus="cletus"]     .mon-4 .bezel { opacity: 1; }
+
+/* The focused monitor also throws more light into the room. */
+body[data-focus] .monitor .emit { opacity: 0.4; transition: opacity 0.4s ease; }
+body[data-focus="nursetrack"] .mon-1 .emit,
+body[data-focus="unshackled"] .mon-2 .emit,
+body[data-focus="wendell"]    .mon-3 .emit,
+body[data-focus="cletus"]     .mon-4 .emit { opacity: 1.35; }
+
+body[data-focus="nursetrack"] .mon-1 .bezel {
   stroke: #ffb547;
-  filter: drop-shadow(0 0 6px rgba(255, 181, 71, 0.7));
+  filter: drop-shadow(0 0 7px rgba(255, 181, 71, 0.75));
 }
 body[data-focus="nursetrack"] #pcb-signals circle { fill: #ffb547; }
 
-/* Unshackled focus: cyan/green accents */
-body[data-focus="unshackled"] .mon-2 rect:first-child {
+body[data-focus="unshackled"] .mon-2 .bezel {
   stroke: #7fffb9;
-  filter: drop-shadow(0 0 6px rgba(127, 255, 185, 0.7));
+  filter: drop-shadow(0 0 7px rgba(127, 255, 185, 0.75));
 }
 body[data-focus="unshackled"] #pcb-signals circle { fill: #7fffb9; }
 
-/* Wendell focus: warm cyan */
-body[data-focus="wendell"] .mon-3 rect:first-child {
+body[data-focus="wendell"] .mon-3 .bezel {
   stroke: #3ee0ff;
-  filter: drop-shadow(0 0 6px rgba(62, 224, 255, 0.85));
+  filter: drop-shadow(0 0 7px rgba(62, 224, 255, 0.9));
 }
 
-/* Cletus focus (kelly.dev meta): default cyan, mon-4 gets extra glow */
-body[data-focus="cletus"] .mon-4 rect:first-child {
+body[data-focus="cletus"] .mon-4 .bezel {
   stroke: #3ee0ff;
-  filter: drop-shadow(0 0 8px rgba(62, 224, 255, 0.9));
+  filter: drop-shadow(0 0 9px rgba(62, 224, 255, 0.95));
 }
+
+/* ===================================================================
+   DEPTH + LIGHTING
+   The monitors are the only light source in this room. Everything below
+   is either something they light, or something that blocks that light.
+   =================================================================== */
+
+/* Screens breathe out of sync so the room light never looks static. */
+@keyframes emit-breathe {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1.18; }
+}
+.monitor .emit {
+  animation: emit-breathe 6.5s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.mon-2 .emit { animation-delay: 1.6s; }
+.mon-3 .emit { animation-delay: 3.2s; }
+.mon-4 .emit { animation-delay: 4.8s; }
+
+/* Volumetric spill onto the desk, tied to the same rhythm. */
+@keyframes cone-drift {
+  0%, 100% { opacity: 0.75; }
+  50%      { opacity: 1; }
+}
+#light-spill .cone {
+  animation: cone-drift 6.5s ease-in-out infinite;
+}
+#light-spill .cone:nth-child(2) { animation-delay: 1.6s; }
+#light-spill .cone:nth-child(3) { animation-delay: 3.2s; }
+#light-spill .cone:nth-child(4) { animation-delay: 4.8s; }
+
+#wall-bloom {
+  animation: emit-breathe 8s ease-in-out infinite;
+}
+
+/* Rim light on the operator tracks the room's brightness. */
+@keyframes rim-breathe {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 0.85; }
+}
+#rim { animation: rim-breathe 6.5s ease-in-out infinite; }
+
+/* ===================================================================
+   SCREEN ACTIVITY
+   Content that actually moves, so the monitors read as running
+   machines rather than painted rectangles.
+   =================================================================== */
+
+/* Log lines scrolling up behind the stat readout. */
+@keyframes data-scroll {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-56px); }
+}
+.data-scroll { animation: data-scroll 9s linear infinite; }
+
+@keyframes code-scroll {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-55px); }
+}
+.code-scroll { animation: code-scroll 7s linear infinite; }
+
+/* Graph baseline creeping, so the trend line looks live. */
+@keyframes grid-drift {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-15px); }
+}
+.grid-drift { animation: grid-drift 5s linear infinite; }
+
+@keyframes graph-pulse {
+  0%, 100% { opacity: 0.9; }
+  50%      { opacity: 0.45; }
+}
+.graph-line { animation: graph-pulse 3.4s ease-in-out infinite; }
+
+/* Little equalizer along the bottom of monitor 1. */
+.eq-bars rect {
+  fill: #0f7ea8;
+  opacity: 0.75;
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+@keyframes eq-bounce {
+  0%, 100% { transform: scaleY(0.3); }
+  50%      { transform: scaleY(1.6); }
+}
+.eq-bars rect { animation: eq-bounce 1.6s ease-in-out infinite; }
+.eq-bars rect:nth-child(2)  { animation-delay: 0.10s; }
+.eq-bars rect:nth-child(3)  { animation-delay: 0.20s; }
+.eq-bars rect:nth-child(4)  { animation-delay: 0.30s; animation-duration: 1.3s; }
+.eq-bars rect:nth-child(5)  { animation-delay: 0.15s; }
+.eq-bars rect:nth-child(6)  { animation-delay: 0.25s; }
+.eq-bars rect:nth-child(7)  { animation-delay: 0.05s; animation-duration: 1.9s; }
+.eq-bars rect:nth-child(8)  { animation-delay: 0.35s; }
+.eq-bars rect:nth-child(9)  { animation-delay: 0.18s; animation-duration: 1.4s; }
+.eq-bars rect:nth-child(10) { animation-delay: 0.28s; }
+.eq-bars rect:nth-child(11) { animation-delay: 0.08s; }
+.eq-bars rect:nth-child(12) { animation-delay: 0.38s; animation-duration: 1.7s; }
+.eq-bars rect:nth-child(13) { animation-delay: 0.22s; }
+.eq-bars rect:nth-child(14) { animation-delay: 0.12s; }
+.eq-bars rect:nth-child(15) { animation-delay: 0.32s; animation-duration: 1.5s; }
+.eq-bars rect:nth-child(16) { animation-delay: 0.02s; }
+
+/* CRT refresh sweep falling down each screen, staggered. */
+@keyframes crt-sweep {
+  0%   { transform: translateY(0);   opacity: 0; }
+  8%   { opacity: 0.10; }
+  92%  { opacity: 0.10; }
+  100% { transform: translateY(66px); opacity: 0; }
+}
+.monitor .sweep {
+  animation: crt-sweep 5.5s linear infinite;
+  transform-box: fill-box;
+}
+.mon-2 .sweep { animation-delay: 1.4s; }
+.mon-3 .sweep { animation-delay: 2.8s; }
+.mon-4 .sweep { animation-delay: 4.2s; }
+
+/* kelly.dev heartbeat */
+@keyframes heartbeat {
+  0%, 100% { opacity: 0.9; r: 2; }
+  50%      { opacity: 0.25; r: 2.7; }
+}
+.heartbeat { animation: heartbeat 1.6s ease-in-out infinite; }
+
+/* Operator mesh nodes twinkle down the body. */
+@keyframes node-twinkle {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+#nodes .node { animation: node-twinkle 3.2s ease-in-out infinite; }
+#nodes .node:nth-child(2n)  { animation-delay: 0.5s; }
+#nodes .node:nth-child(3n)  { animation-delay: 1.1s; }
+#nodes .node:nth-child(5n)  { animation-delay: 1.8s; }
+
+/* ===================================================================
+   STATE CHOREOGRAPHY
+   Idle is calm. Listening leans in. Thinking floods the room with
+   work. Speaking radiates outward.
+   =================================================================== */
+
+/* ---- LISTENING: room quiets and focuses, light steadies ---- */
+body.state-listening .data-scroll,
+body.state-listening .code-scroll { animation-duration: 16s; }
+body.state-listening .eq-bars rect { animation-duration: 2.8s; }
+body.state-listening .monitor .emit { animation-duration: 3s; }
+body.state-listening #light-spill .cone { animation-duration: 3s; }
+body.state-listening #rim { animation-duration: 3s; opacity: 0.95; }
+
+/* ---- THINKING: everything accelerates, screens flood with data ---- */
+body.state-thinking .data-scroll { animation-duration: 1.6s; }
+body.state-thinking .code-scroll { animation-duration: 1.1s; }
+body.state-thinking .grid-drift  { animation-duration: 0.9s; }
+body.state-thinking .eq-bars rect { animation-duration: 0.5s; }
+body.state-thinking .monitor .sweep { animation-duration: 1.4s; }
+body.state-thinking .monitor .emit,
+body.state-thinking #light-spill .cone,
+body.state-thinking #wall-bloom { animation-duration: 1.5s; }
+body.state-thinking #nodes .node { animation-duration: 0.7s; }
+/* light in the room visibly flickers as work happens */
+@keyframes room-flicker {
+  0%, 100% { opacity: 1; }
+  47%      { opacity: 0.82; }
+  50%      { opacity: 1.15; }
+  53%      { opacity: 0.9; }
+}
+body.state-thinking #light-spill { animation: room-flicker 0.9s ease-in-out infinite; }
+
+/* ---- SPEAKING: light radiates outward in time with the voice ---- */
+body.state-speaking .monitor .emit,
+body.state-speaking #wall-bloom { animation-duration: 0.75s; }
+body.state-speaking #light-spill .cone { animation-duration: 0.75s; }
+body.state-speaking #rim { animation-duration: 0.75s; opacity: 1; }
+body.state-speaking .eq-bars rect { animation-duration: 0.42s; }
+body.state-speaking .heartbeat { animation-duration: 0.5s; }
+body.state-speaking .code-scroll { animation-duration: 3s; }
+
+/* Waveform takes over monitor 3 while speaking. */
+.waveform-overlay { display: none; }
+.waveform-overlay .wf-bar {
+  fill: #3ee0ff;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 2px rgba(62, 224, 255, 0.7));
+  transform-origin: center;
+  transform-box: fill-box;
+}
+body.state-speaking .waveform-overlay { display: block; }
+body.state-speaking .mon3-content { opacity: 0; transition: opacity 0.2s ease; }
+
+/* ---- FOLLOW-UP: room goes green, the floor is yours ---- */
+body.followup-open .monitor .bezel {
+  stroke: #7fffb9;
+  transition: stroke 0.4s ease;
+}
+body.followup-open #rim { opacity: 1; }
