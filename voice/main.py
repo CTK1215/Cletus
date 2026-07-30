@@ -5,7 +5,9 @@ import atexit
 import json
 import logging
 import os
+import random
 import time
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +21,7 @@ from brain import Brain
 from tts import Tts
 from text_utils import strip_markdown, clamp_for_speech
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 PID_FILE = Path(__file__).parent / "cletus.pid"
 
 
@@ -62,6 +64,27 @@ WHISPER_MODEL_SIZE = "small"
 WHISPER_LANGUAGE = "en"
 WHISPER_COMPUTE = "int8"
 
+# Follow-up window: after Cletus finishes speaking, the mic stays open briefly so
+# a reply doesn't need the wake word again. This is what makes it feel like a
+# conversation instead of a series of commands.
+FOLLOWUP_WINDOW_S = 7.0        # how long the mic stays open
+FOLLOWUP_ARM_DELAY_S = 0.4     # let Cletus's own audio tail clear the room first
+FOLLOWUP_ENERGY = 0.02         # well above the silence floor, below normal speech
+FOLLOWUP_TRIGGER_CHUNKS = 2    # ~160ms of real voice, so a door slam won't do it
+
+# Pre-roll keeps the last few chunks of audio on hand at all times. When a
+# follow-up trips, we seed the recording with them so the first syllable isn't
+# clipped off while the trigger was still counting.
+PREROLL_CHUNKS = 4             # ~320ms
+
+# Spoken while the brain is off using tools, so real work isn't dead silence.
+FILLER_LINES = (
+    "Let me take a look.",
+    "Hang on, checkin' now.",
+    "Give me a second here.",
+    "Lookin' it up.",
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-5s  %(message)s",
@@ -84,6 +107,17 @@ is_recording: bool = False
 recording_buffer: list = []
 silence_count: int = 0
 grace_remaining: int = 0
+
+# Follow-up window state. Armed as [followup_from, followup_until) on the
+# monotonic clock; both zero means closed.
+followup_from: float = 0.0
+followup_until: float = 0.0
+followup_voice_chunks: int = 0
+preroll: deque = deque(maxlen=PREROLL_CHUNKS)
+
+# Serializes every bit of TTS playback. Without it a filler line and the real
+# reply can reach the sound device at the same time and talk over each other.
+speech_lock = asyncio.Lock()
 
 
 async def broadcast(msg: dict) -> None:
@@ -124,9 +158,56 @@ async def heartbeat_loop() -> None:
         await broadcast({"event": "heartbeat"})
 
 
+def _from_audio_thread(coro) -> None:
+    """Schedule a coroutine on the main loop from the sounddevice thread."""
+    if main_loop is not None:
+        asyncio.run_coroutine_threadsafe(coro, main_loop)
+    else:
+        # No loop yet (startup, or a unit test). Close it so it doesn't sit
+        # around as an un-awaited coroutine.
+        coro.close()
+
+
+def arm_followup() -> None:
+    """Open the no-wake-word window. Called after Cletus finishes a reply."""
+    global followup_from, followup_until, followup_voice_chunks
+    now = time.monotonic()
+    followup_from = now + FOLLOWUP_ARM_DELAY_S
+    followup_until = followup_from + FOLLOWUP_WINDOW_S
+    followup_voice_chunks = 0
+    log.info("follow-up window open  (%.0fs, no wake word needed)", FOLLOWUP_WINDOW_S)
+    _from_audio_thread(broadcast({"event": "followup-open", "seconds": FOLLOWUP_WINDOW_S}))
+
+
+def close_followup(reason: str = "") -> None:
+    global followup_from, followup_until, followup_voice_chunks
+    if not followup_until:
+        return
+    followup_from = 0.0
+    followup_until = 0.0
+    followup_voice_chunks = 0
+    if reason:
+        log.info("follow-up window closed  (%s)", reason)
+    _from_audio_thread(broadcast({"event": "followup-closed"}))
+
+
+def _begin_recording(*, seed_preroll: bool) -> None:
+    """Start capturing. Shared by the wake-word path and the follow-up path."""
+    global is_recording, silence_count, grace_remaining
+    recording_buffer.clear()
+    if seed_preroll:
+        # Replay the audio already in hand so the first syllable survives.
+        recording_buffer.extend(preroll)
+    preroll.clear()
+    is_recording = True
+    silence_count = 0
+    grace_remaining = POST_WAKE_GRACE_CHUNKS
+
+
 def audio_callback(indata, frames, time_info, status):
     """Runs on the sounddevice audio thread."""
     global last_wake_at, is_recording, silence_count, grace_remaining
+    global followup_voice_chunks
 
     if status:
         log.debug("audio status: %s", status)
@@ -140,6 +221,8 @@ def audio_callback(indata, frames, time_info, status):
     predictions = wake_model.predict(audio_int16) if wake_model is not None else {}
 
     if is_speaking:
+        # Keep our own voice out of the pre-roll, or a follow-up would replay it.
+        preroll.clear()
         return
 
     if is_recording:
@@ -167,30 +250,79 @@ def audio_callback(indata, frames, time_info, status):
                     wake_model.reset()
                 except Exception:
                     pass
-            if main_loop is not None:
-                asyncio.run_coroutine_threadsafe(handle_transcription(audio_data), main_loop)
+            _from_audio_thread(handle_transcription(audio_data))
         return
+
+    # Idle. Keep a rolling pre-roll so a follow-up trigger doesn't clip the
+    # first syllable while it was still counting chunks.
+    preroll.append(audio_float)
+
+    now = time.monotonic()
+
+    # Follow-up window: reply without saying the wake word again.
+    if followup_until:
+        if now >= followup_until:
+            close_followup("timed out")
+        elif now >= followup_from:
+            rms = float(np.sqrt(np.mean(audio_float ** 2)))
+            if rms >= FOLLOWUP_ENERGY:
+                followup_voice_chunks += 1
+                if followup_voice_chunks >= FOLLOWUP_TRIGGER_CHUNKS:
+                    log.info("FOLLOW-UP  (rms %.4f)  -> recording, no wake word", rms)
+                    close_followup()
+                    _begin_recording(seed_preroll=True)
+                    _from_audio_thread(
+                        broadcast({"event": "wake", "word": "follow-up", "score": 1.0})
+                    )
+                    return
+            else:
+                followup_voice_chunks = 0
 
     for name, score in predictions.items():
         if score <= WAKE_THRESHOLD:
             continue
-        now = time.monotonic()
         if now - last_wake_at < WAKE_COOLDOWN_S:
             return
         last_wake_at = now
         log.info("WAKE  %s  (score %.2f)  -> recording", name, score)
 
-        is_recording = True
-        recording_buffer.clear()
-        silence_count = 0
-        grace_remaining = POST_WAKE_GRACE_CHUNKS
-
-        if main_loop is not None:
-            asyncio.run_coroutine_threadsafe(
-                broadcast({"event": "wake", "word": name, "score": float(score)}),
-                main_loop,
-            )
+        close_followup()
+        _begin_recording(seed_preroll=False)
+        _from_audio_thread(
+            broadcast({"event": "wake", "word": name, "score": float(score)})
+        )
         return
+
+
+async def _speak(text: str, *, announce: bool = True) -> None:
+    """Serialized TTS playback.
+
+    announce=False is for filler lines: they should be heard, but they should
+    not flip the HUD into its full speaking state or fire speaking-end, which
+    is what arms the follow-up window.
+    """
+    global is_speaking
+    if tts is None or not text:
+        return
+
+    async with speech_lock:
+        if announce:
+            await broadcast({"event": "speaking-start"})
+        is_speaking = True
+        try:
+            await tts.speak(clamp_for_speech(text))
+        except Exception as e:
+            log.error("tts playback failed: %s", e)
+        finally:
+            is_speaking = False
+            # Our own voice was just in the wake model's input buffer.
+            if wake_model is not None:
+                try:
+                    wake_model.reset()
+                except Exception:
+                    pass
+            if announce:
+                await broadcast({"event": "speaking-end"})
 
 
 async def handle_transcription(audio_data: np.ndarray) -> None:
@@ -232,32 +364,37 @@ async def handle_transcription(audio_data: np.ndarray) -> None:
         return
 
     await broadcast({"event": "brain-thinking"})
-    raw_reply = await brain.think(text)
+
+    filler_task: asyncio.Task | None = None
+
+    async def on_first_tool() -> None:
+        """Brain reached for a tool, so this answer is going to take a moment.
+        Say something instead of leaving the room silent."""
+        nonlocal filler_task
+        line = random.choice(FILLER_LINES)
+        log.info("filler  %r", line)
+        await broadcast({"event": "filler", "text": line})
+        filler_task = asyncio.create_task(_speak(line, announce=False))
+
+    raw_reply = await brain.think(text, on_first_tool=on_first_tool)
     reply = strip_markdown(raw_reply)
     if not reply:
         return
 
     await broadcast({"event": "reply", "text": reply})
 
-    if tts is None:
-        return
+    # Let the filler finish before the real answer starts, so they can never
+    # land out of order.
+    if filler_task is not None:
+        try:
+            await filler_task
+        except Exception as e:
+            log.warning("filler playback failed: %s", e)
 
-    global is_speaking
-    await broadcast({"event": "speaking-start"})
-    is_speaking = True
-    try:
-        await tts.speak(clamp_for_speech(reply))
-    except Exception as e:
-        log.error("tts playback failed: %s", e)
-    finally:
-        is_speaking = False
-        # Reset wake model since our own voice was in its input buffer.
-        if wake_model is not None:
-            try:
-                wake_model.reset()
-            except Exception:
-                pass
-        await broadcast({"event": "speaking-end"})
+    await _speak(reply)
+
+    # Cletus is done talking, so the floor is Chris's. Open the mic.
+    arm_followup()
 
 
 def load_brain() -> None:

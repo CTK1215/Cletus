@@ -40,6 +40,34 @@ CLAUDE_MD_PATH = Path.home() / "CLAUDE.md"
 SESSION_FILE = VOICE_CWD / "session.json"
 SESSION_MAX_IDLE_S = 60 * 60  # start a fresh conversation after an hour of quiet
 
+# Runaway guard only. Real work still gets room to breathe; this just stops a
+# pathological tool loop from talking to itself for five minutes.
+MAX_TURNS = 6
+
+# Appended to the Claude Code preset, so CLAUDE.md and the Cletus identity stay
+# fully intact. This only teaches him how to behave when the answer is spoken
+# out loud instead of printed.
+VOICE_SYSTEM_APPEND = """
+You are being heard, not read. Your reply goes straight to a text-to-speech
+voice and out a speaker.
+
+Length: 1 to 3 sentences. Lead with the answer, then stop. If the honest answer
+is long, give the headline out loud and offer the detail instead of reciting it.
+
+Never emit markdown, headers, bullet lists, numbered lists, code blocks, file
+paths read character by character, or raw URLs. There is no screen. Say "the
+admin dashboard" rather than reading a link aloud.
+
+Most of what you hear is conversation, not a work order. Answer from what you
+already know. Reach for tools only when the request genuinely needs current file
+contents or an action actually taken, and when you do, use the fewest calls that
+answer it. Do not open files reflexively just to sound thorough.
+
+If something needs real work (writing code, editing many files, a long review),
+say so in one sentence and suggest bringing it to a typed session. Do not grind
+through it out loud.
+""".strip()
+
 # Short utterances that clear the conversation thread by voice.
 RESET_PHRASES = ("fresh start", "new conversation", "clean slate", "start over")
 RESET_MAX_LEN = 40  # only treat as a reset command when the utterance is this short
@@ -157,7 +185,14 @@ class Brain:
     # Thinking
     # ------------------------------------------------------------------
 
-    async def think(self, user_text: str) -> str:
+    async def think(self, user_text: str, on_first_tool=None) -> str:
+        """Answer user_text.
+
+        on_first_tool: optional awaitable called once, the first time this
+        exchange reaches for a tool. Lets the caller cover the dead air with a
+        spoken filler line. Guarded so auth fallback and session retries cannot
+        fire it twice.
+        """
         if self._is_reset_command(user_text):
             self.reset_session()
             return "Fresh slate, boss. What's next?"
@@ -166,9 +201,21 @@ class Brain:
             log.info("voice session idle past limit, starting fresh")
             self.reset_session()
 
+        already_fired = False
+
+        async def fire_once():
+            nonlocal already_fired
+            if already_fired or on_first_tool is None:
+                return
+            already_fired = True
+            try:
+                await on_first_tool()
+            except Exception as e:
+                log.warning("first-tool callback failed: %s", e)
+
         # Path 1: Max plan (OAuth)
         try:
-            return await self._call_with_session_retry(user_text, use_api_key=False)
+            return await self._call_with_session_retry(user_text, use_api_key=False, on_first_tool=fire_once)
         except RateLimited:
             log.warning("Max plan rate-limited, falling back to API key")
         except Exception as e:
@@ -182,17 +229,17 @@ class Brain:
 
         # Path 2: API key
         try:
-            return await self._call_with_session_retry(user_text, use_api_key=True)
+            return await self._call_with_session_retry(user_text, use_api_key=True, on_first_tool=fire_once)
         except Exception as e:
             log.error("API key call also failed: %s", e)
             return f"My brain froze up: {e}"
 
-    async def _call_with_session_retry(self, user_text: str, use_api_key: bool) -> str:
+    async def _call_with_session_retry(self, user_text: str, use_api_key: bool, on_first_tool=None) -> str:
         """Call once; if a resume attempt fails for a non-rate-limit reason
         (stale or corrupt session file), clear the session and retry fresh."""
         had_session = self.session_id is not None
         try:
-            return await self._call(user_text, use_api_key=use_api_key)
+            return await self._call(user_text, use_api_key=use_api_key, on_first_tool=on_first_tool)
         except RateLimited:
             raise
         except Exception as e:
@@ -200,9 +247,9 @@ class Brain:
                 raise
             log.warning("call with resume failed (%s); clearing session and retrying fresh", e)
             self.reset_session()
-            return await self._call(user_text, use_api_key=use_api_key)
+            return await self._call(user_text, use_api_key=use_api_key, on_first_tool=on_first_tool)
 
-    async def _call(self, user_text: str, use_api_key: bool) -> str:
+    async def _call(self, user_text: str, use_api_key: bool, on_first_tool=None) -> str:
         auth_label = "api-key" if use_api_key else "max-plan"
         resume_id = self.session_id
         log.info(
@@ -220,6 +267,12 @@ class Brain:
             setting_sources=["user", "project", "local"],
             add_dirs=[str(Path.home()), str(Path.home() / "Documents" / "Brain")],
             resume=resume_id,
+            system_prompt={
+                "type": "preset",
+                "preset": "claude_code",
+                "append": VOICE_SYSTEM_APPEND,
+            },
+            max_turns=MAX_TURNS,
         )
 
         result_parts: list[str] = []
@@ -251,6 +304,8 @@ class Brain:
                         elif isinstance(block, ToolUseBlock):
                             tool_calls += 1
                             log.info("tool  %s", getattr(block, "name", "?"))
+                            if on_first_tool is not None:
+                                await on_first_tool()
                 elif isinstance(message, ResultMessage):
                     total_cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
                     num_turns = int(getattr(message, "num_turns", num_turns) or num_turns)

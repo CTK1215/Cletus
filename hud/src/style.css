@@ -71,6 +71,44 @@ body.state-speaking  #state-label { color: #7fffb9; text-shadow: 0 0 6px rgba(12
 #voice-status.online  { color: #3ee0ff; text-shadow: 0 0 4px rgba(62, 224, 255, 0.7); }
 #voice-status.offline { color: #3a5f75; }
 
+/* Follow-up window: the mic is open, no wake word needed. */
+#followup {
+  position: absolute;
+  top: 3px;
+  left: 132px;
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: #7fffb9;
+  text-shadow: 0 0 6px rgba(127, 255, 185, 0.85);
+  z-index: 10;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+  animation: followup-pulse 1.1s ease-in-out infinite;
+}
+#followup.hidden { display: none; }
+
+@keyframes followup-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+/* Whole-window cue so it reads from the corner of your eye. */
+body.followup-open #hud {
+  border-color: #7fffb9;
+  box-shadow:
+    0 0 20px rgba(127, 255, 185, 0.45),
+    0 10px 30px rgba(0, 0, 0, 0.7);
+}
+
+/* Filler line ("let me look") reads as tentative, not as the answer. */
+#cletus-said.filler {
+  font-style: italic;
+  font-weight: 400;
+  color: #8fc4d8;
+  text-shadow: none;
+}
+
 #dialog {
   position: absolute;
   top: 26px;

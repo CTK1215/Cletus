@@ -56,8 +56,50 @@ function showUserLine(text) {
 function showCletusLine(text) {
   const el = document.getElementById('cletus-said');
   el.textContent = text;
-  el.classList.remove('hidden');
+  el.classList.remove('hidden', 'filler');
   showDialog();
+}
+
+// "Let me look." spoken while the brain is off using tools. Styled as
+// tentative so it doesn't read as the actual answer.
+function showFillerLine(text) {
+  const el = document.getElementById('cletus-said');
+  el.textContent = text;
+  el.classList.remove('hidden');
+  el.classList.add('filler');
+  showDialog();
+}
+
+let followupTimer = null;
+
+function openFollowup(seconds) {
+  const el = document.getElementById('followup');
+  const count = document.getElementById('followup-count');
+  el.classList.remove('hidden');
+  document.body.classList.add('followup-open');
+
+  let left = Math.ceil(seconds || 0);
+  count.textContent = left > 0 ? left : '';
+
+  if (followupTimer) clearInterval(followupTimer);
+  followupTimer = setInterval(() => {
+    left -= 1;
+    if (left <= 0) {
+      closeFollowup();
+      return;
+    }
+    count.textContent = left;
+  }, 1000);
+}
+
+function closeFollowup() {
+  if (followupTimer) {
+    clearInterval(followupTimer);
+    followupTimer = null;
+  }
+  document.getElementById('followup').classList.add('hidden');
+  document.getElementById('followup-count').textContent = '';
+  document.body.classList.remove('followup-open');
 }
 
 function scheduleReturnToIdle(delay = RETURN_TO_IDLE_MS) {
@@ -98,6 +140,7 @@ function connectVoice() {
   ws.addEventListener('close', () => {
     console.log('[voice] disconnected');
     setVoiceStatus(false);
+    closeFollowup();
     scheduleReconnect();
   });
 
@@ -125,7 +168,21 @@ function handleVoiceEvent(msg) {
 
     case 'wake':
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+      closeFollowup();
       setState('listening');
+      break;
+
+    case 'followup-open':
+      openFollowup(msg.seconds);
+      break;
+
+    case 'followup-closed':
+      closeFollowup();
+      break;
+
+    case 'filler':
+      console.log('[voice] filler:', msg.text);
+      showFillerLine(msg.text);
       break;
 
     case 'transcribing':
