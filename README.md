@@ -82,6 +82,23 @@ are large, machine-specific, and rebuildable:
 A committed venv would not work anyway. Its `Scripts/*.exe` and `pyvenv.cfg` have
 absolute paths baked in, so it is not portable between machines.
 
+### Use Python 3.10, not whatever `python` points at
+
+This matters more than it looks. On the build machine, `python` on PATH resolves to
+**3.14.6**, but Cletus runs on **3.10.9**. Building the venv with the wrong
+interpreter fails, and it fails deep into the install rather than up front:
+
+```
+Collecting numpy==2.2.6
+  Downloading numpy-2.2.6.tar.gz (20.3 MB)     <- source, not a wheel
+  meson.build:1:0: ERROR: Unhandled python exception
+error: metadata-generation-failed
+```
+
+numpy 2.2.6 publishes no `cp314` wheel because it predates Python 3.14, so pip
+falls back to compiling from source and dies. **Always create the venv with an
+explicit interpreter.** Check what you have with `py -0`.
+
 **Known-good toolchain:** Python 3.10.9, Node 24.18.1, npm 11.16.0.
 
 To rebuild from nothing:
@@ -90,7 +107,8 @@ To rebuild from nothing:
 git clone <repo> cletus
 cd cletus
 
-python -m venv voice\venv
+py -3.10 -m venv voice\venv
+voice\venv\Scripts\python.exe --version          REM confirm it says 3.10.x
 voice\venv\Scripts\python.exe -m pip install -r voice\requirements.txt
 
 cd hud
@@ -99,6 +117,11 @@ cd ..
 
 cletus.bat
 ```
+
+**Last verified:** 2026-07-30, from a clean clone. All 8 pinned packages resolved
+to their exact versions, every module imported clean, and the Piper voice
+downloaded itself on first construction. `npm install` pulled 13 packages in 3
+seconds.
 
 First launch downloads the Piper voice (~60MB) into `voice/models/`, the
 faster-whisper `small` model into the HuggingFace cache, and the OpenWakeWord
