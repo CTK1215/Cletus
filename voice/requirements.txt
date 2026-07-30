@@ -1,8 +1,15 @@
-websockets>=15.0,<16.0
-openwakeword>=0.6.0
-sounddevice>=0.4.6
-numpy>=1.24
-faster-whisper>=1.0.0
-anthropic>=0.40
-piper-tts>=1.2.0
-claude-agent-sdk>=0.2.128
+# Pinned to the exact versions of the known-good running build (2026-07-30),
+# verified against Python 3.10.9 on Windows.
+#
+# Loosening these back to ranges is how a clean restore quietly produces a
+# different program than the one you tested. If you bump a version, run the
+# restore test in the README before trusting it.
+
+websockets==15.0.1
+openwakeword==0.6.0
+sounddevice==0.5.5
+numpy==2.2.6
+faster-whisper==1.2.1
+anthropic==0.120.2
+piper-tts==1.6.0
+claude-agent-sdk==0.2.128

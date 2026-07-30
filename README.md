@@ -68,6 +68,49 @@ Close and reopen your terminals so the env var takes.
 
 **4. Max plan token** is auto-used from your Claude Code login. Nothing to set.
 
+## Restore from a clean clone
+
+The repo tracks source only. Three things are deliberately not in git because they
+are large, machine-specific, and rebuildable:
+
+| Not tracked | Size | How it comes back |
+|---|---|---|
+| `voice/venv/` | ~900MB | `pip install -r voice/requirements.txt` |
+| `hud/node_modules/` | ~360MB | `npm install` (Electron pinned by `package-lock.json`) |
+| `voice/models/` | ~60MB | Downloads itself on first run |
+
+A committed venv would not work anyway. Its `Scripts/*.exe` and `pyvenv.cfg` have
+absolute paths baked in, so it is not portable between machines.
+
+**Known-good toolchain:** Python 3.10.9, Node 24.18.1, npm 11.16.0.
+
+To rebuild from nothing:
+
+```
+git clone <repo> cletus
+cd cletus
+
+python -m venv voice\venv
+voice\venv\Scripts\python.exe -m pip install -r voice\requirements.txt
+
+cd hud
+npm install
+cd ..
+
+cletus.bat
+```
+
+First launch downloads the Piper voice (~60MB) into `voice/models/`, the
+faster-whisper `small` model into the HuggingFace cache, and the OpenWakeWord
+models. Expect the first start to take a few minutes. After that it is seconds.
+
+To verify a restore without launching the full service (useful when an instance
+is already running and holding port 8765 and the microphone):
+
+```
+voice\venv\Scripts\python.exe -c "import sys; sys.path.insert(0,'voice'); import main, brain, tts, text_utils; print('all modules import clean')"
+```
+
 ## Make a desktop shortcut
 
 1. Right-click `cletus.bat` → **Send to** → **Desktop (create shortcut)**
@@ -94,17 +137,18 @@ Now Cletus is one double-click away.
 ## Build history
 
 1. Project skeleton + Electron shell (done)
-2. Static workshop scene (done, cheesy SVG placeholder)
+2. Static workshop scene (done, replaced in step 8)
 3. State machine + animations (done)
 4. Voice input, wake word + Whisper (done)
 5. Cletus brain hookup, basic Claude Sonnet 4.6 chat (done)
 6. Voice output, Piper TTS (done)
 7. Full agent capabilities via Claude Agent SDK, dual-auth, tools + MCP (done)
+8. Cyber HQ scene rebuild + conversation memory (done 2026-07-30)
 
 ## Deferred
 
 - Custom "Cletus" wake word (currently "hey jarvis")
 - Cletus-voice TTS (currently a generic voice, either ElevenLabs clone or a country-sounding Piper voice)
-- Prettier art (currently CSS/SVG placeholders)
-- Conversation memory across exchanges (currently single-turn each wake)
+- Wire the F1-F4 project focus system to the WebSocket (`renderer.js:177`)
+- Feed the 4 monitors live KPIs (currently hardcoded SVG text)
 - Real weather/clock/hat-tip polish
