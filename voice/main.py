@@ -19,10 +19,11 @@ from faster_whisper import WhisperModel
 from websockets.asyncio.server import serve
 
 from brain import Brain
+from dispatcher import Dispatcher
 from tts import make_tts, PiperTts, ElevenLabsTts
 from text_utils import strip_markdown, clamp_for_speech
 
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 PID_FILE = Path(__file__).parent / "cletus.pid"
 
 
@@ -128,6 +129,11 @@ whisper_model: WhisperModel | None = None
 audio_stream: sd.InputStream | None = None
 brain: Brain | None = None
 tts: PiperTts | ElevenLabsTts | None = None
+# Runs real work in real project folders as detached tasks. The audio loop
+# never awaits a job, which is the whole point: brain.think() is awaited
+# inline below, so anything long would otherwise freeze the microphone, the
+# wake word, and the HUD for its entire duration.
+dispatcher: Dispatcher | None = None
 is_speaking: bool = False
 
 last_wake_at: float = 0.0
@@ -423,6 +429,28 @@ async def handle_transcription(audio_data: np.ndarray) -> None:
         await switch_tts(requested)
         return
 
+    # "What are you working on?" is answered locally. It is the one question
+    # about jobs that must never wait on a brain call, because Chris asks it
+    # precisely when he is wondering whether something is stuck.
+    if dispatcher is not None and _is_job_status_query(text):
+        await _speak(dispatcher.status_line())
+        arm_followup()
+        return
+
+    # Work orders go to a detached task and are NOT awaited here. Everything
+    # below this line blocks the microphone, which is fine for a two-sentence
+    # answer and unacceptable for a twenty-minute build.
+    if dispatcher is not None:
+        try:
+            if await dispatcher.maybe_dispatch(text):
+                arm_followup()
+                return
+        except Exception as e:
+            log.error("dispatch failed: %s", e)
+            await _speak("I couldn't start that job.")
+            arm_followup()
+            return
+
     if brain is None:
         return
 
@@ -460,6 +488,28 @@ async def handle_transcription(audio_data: np.ndarray) -> None:
     arm_followup()
 
 
+# Short utterances that ask about running jobs. Length-capped for the same
+# reason the reset and voice-switch phrases are: "I was wondering what you're
+# working on next month" must not be swallowed as a status query.
+JOB_STATUS_PHRASES = (
+    "what are you working on",
+    "what are you doing",
+    "how's that job",
+    "hows that job",
+    "are you done",
+    "job status",
+    "still working",
+)
+JOB_STATUS_MAX_LEN = 45
+
+
+def _is_job_status_query(text: str) -> bool:
+    s = text.strip().lower().rstrip(".!?, ")
+    if len(s) > JOB_STATUS_MAX_LEN:
+        return False
+    return any(p in s for p in JOB_STATUS_PHRASES)
+
+
 def load_brain() -> None:
     global brain
     try:
@@ -467,6 +517,18 @@ def load_brain() -> None:
         log.info("brain online")
     except Exception as e:
         log.warning("brain offline: %s", e)
+
+
+def load_dispatcher() -> None:
+    """Wire the job runner to the same broadcast and speech paths the rest of
+    the service uses, so job events reach the HUD and job results are spoken
+    through the one lock that serializes all playback."""
+    global dispatcher
+    try:
+        dispatcher = Dispatcher(on_event=broadcast, speak=_speak)
+        log.info("dispatcher online")
+    except Exception as e:
+        log.warning("dispatcher offline: %s", e)
 
 
 def load_tts() -> None:
@@ -562,13 +624,20 @@ async def main() -> None:
     main_loop = asyncio.get_running_loop()
 
     load_brain()
+    load_dispatcher()
     load_tts()
     load_whisper()
     start_wake_listener()
 
     log.info("starting cletus voice service v%s on ws://%s:%d", VERSION, HOST, PORT)
-    async with serve(handler, HOST, PORT):
-        await heartbeat_loop()
+    try:
+        async with serve(handler, HOST, PORT):
+            await heartbeat_loop()
+    finally:
+        # Cancel any job still running so Ctrl-C or a HUD close does not leave
+        # an orphaned agent editing files with nobody watching.
+        if dispatcher is not None:
+            await dispatcher.shutdown()
 
 
 if __name__ == "__main__":

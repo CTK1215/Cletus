@@ -213,25 +213,27 @@ class Brain:
             except Exception as e:
                 log.warning("first-tool callback failed: %s", e)
 
-        # Path 1: Max plan (OAuth)
+        # Max plan (stored OAuth) is the ONLY path.
+        #
+        # There used to be an API-key fallback here. It was unreachable, because
+        # no ANTHROPIC_API_KEY exists on this machine and the guard above Path 2
+        # returned before it. Unreachable is not the same as harmless: the day a
+        # key got set for something unrelated (a scratch script, a bootcamp
+        # exercise), the next rate limit would have silently started billing it
+        # with nothing to warn anyone. Removed rather than left armed.
+        #
+        # Hitting the cap now says so out loud and stops, which is the honest
+        # behaviour and the one Chris asked for.
         try:
             return await self._call_with_session_retry(user_text, use_api_key=False, on_first_tool=fire_once)
         except RateLimited:
-            log.warning("Max plan rate-limited, falling back to API key")
+            log.warning("Max plan rate-limited; no fallback by design")
+            return "I'm capped on the Max plan right now. Give it a bit and ask me again."
         except Exception as e:
             if _looks_like_rate_limit(e):
-                log.warning("Max plan rate-limited (%s), falling back to API key", e)
-            else:
-                log.warning("Max plan call failed (%s), falling back to API key", e)
-
-        if not self.api_key:
-            return "My Max plan is capped and no API key is set for fallback. Set ANTHROPIC_API_KEY to keep me talking through rate limits."
-
-        # Path 2: API key
-        try:
-            return await self._call_with_session_retry(user_text, use_api_key=True, on_first_tool=fire_once)
-        except Exception as e:
-            log.error("API key call also failed: %s", e)
+                log.warning("Max plan rate-limited (%s); no fallback by design", e)
+                return "I'm capped on the Max plan right now. Give it a bit and ask me again."
+            log.error("brain call failed: %s", e)
             return f"My brain froze up: {e}"
 
     async def _call_with_session_retry(self, user_text: str, use_api_key: bool, on_first_tool=None) -> str:

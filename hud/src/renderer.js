@@ -220,6 +220,25 @@ function handleVoiceEvent(msg) {
       scheduleReturnToIdle(800);
       break;
 
+    // ---- Background jobs ------------------------------------------------
+    // A dispatched job runs detached from the audio loop, so the HUD is the
+    // only place Chris can see that something is still happening. Without
+    // these, a twenty-minute build looks identical to an idle room.
+
+    case 'job-started':
+      console.log('[voice] job started:', msg.id, msg.project, msg.request);
+      addJob(msg.id, msg.projectSpoken || msg.project);
+      break;
+
+    case 'job-progress':
+      updateJob(msg.id, `${msg.toolCalls} steps · ${formatElapsed(msg.elapsed)}`);
+      break;
+
+    case 'job-done':
+      console.log('[voice] job done:', msg.id, msg.ok ? 'ok' : 'failed');
+      finishJob(msg.id, msg.ok, formatElapsed(msg.elapsed));
+      break;
+
     case 'error':
       console.error('[voice] error:', msg.message);
       scheduleReturnToIdle(1000);
@@ -228,6 +247,62 @@ function handleVoiceEvent(msg) {
     default:
       console.log('[voice] event:', msg);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Job tray
+//
+// Dispatched work runs as a detached task, so nothing in the room changes
+// while it happens: no speech, no state flip, no waveform. This tray is the
+// only signal that Cletus is busy rather than asleep, which matters most
+// exactly when a job is taking longer than expected.
+//
+// Finished jobs linger briefly rather than vanishing, so a result that lands
+// while Chris is out of the room is still there when he walks back in.
+
+const JOB_LINGER_MS = 45000;
+
+function jobTray() {
+  let el = document.getElementById('job-tray');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'job-tray';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function formatElapsed(seconds) {
+  const s = Number(seconds) || 0;
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m`;
+}
+
+function addJob(id, label) {
+  const row = document.createElement('div');
+  row.className = 'job-row job-running';
+  row.id = `job-${id}`;
+  row.innerHTML =
+    `<span class="job-dot"></span>` +
+    `<span class="job-label"></span>` +
+    `<span class="job-meta">starting…</span>`;
+  row.querySelector('.job-label').textContent = label;
+  jobTray().appendChild(row);
+}
+
+function updateJob(id, meta) {
+  const row = document.getElementById(`job-${id}`);
+  if (row) row.querySelector('.job-meta').textContent = meta;
+}
+
+function finishJob(id, ok, elapsed) {
+  const row = document.getElementById(`job-${id}`);
+  if (!row) return;
+  row.classList.remove('job-running');
+  row.classList.add(ok ? 'job-ok' : 'job-failed');
+  row.querySelector('.job-meta').textContent = `${ok ? 'done' : 'failed'} · ${elapsed}`;
+  setTimeout(() => row.remove(), JOB_LINGER_MS);
 }
 
 // Kelly.dev focus system: highlights the monitor + traces of the currently-active project.
