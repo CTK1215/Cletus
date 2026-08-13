@@ -23,7 +23,7 @@ from dispatcher import Dispatcher
 from tts import make_tts, PiperTts, ElevenLabsTts
 from text_utils import strip_markdown, clamp_for_speech
 
-VERSION = "0.10.1"
+VERSION = "0.10.2"
 PID_FILE = Path(__file__).parent / "cletus.pid"
 
 
@@ -55,7 +55,9 @@ CHUNK_SAMPLES = 1280  # 80ms at 16kHz
 
 # Recording / silence detection
 SILENCE_ENERGY = 0.015          # RMS threshold on float32 audio
-SILENCE_CHUNKS_TO_STOP = 15     # ~1.2s of silence
+# ~1.8s of silence. 1.2s clipped Chris mid-sentence at natural pauses and the
+# fragments went to the brain as if they were whole thoughts.
+SILENCE_CHUNKS_TO_STOP = 23
 MAX_RECORD_CHUNKS = 125         # ~10s hard cap
 POST_WAKE_GRACE_CHUNKS = 8      # ~640ms grace before we start counting silence
 
@@ -63,6 +65,16 @@ POST_WAKE_GRACE_CHUNKS = 8      # ~640ms grace before we start counting silence
 WHISPER_MODEL_SIZE = "small"
 WHISPER_LANGUAGE = "en"
 WHISPER_COMPUTE = "int8"
+WHISPER_BEAM_SIZE = 5           # greedy (1) misheard proper nouns constantly
+
+# Biases decoding toward the words actually spoken in this house. Without it,
+# real transcripts came back "Hicksville" for Higgsfield and "11lbs" for
+# eleven labs, and the brain acted on the garble.
+WHISPER_VOCABULARY = (
+    "Cletus, Higgsfield, ElevenLabs, eleven labs, Piper, NurseTrack, "
+    "ServeSync, Kellybuilt, Wendell Turner, Unshackled Truth, Sanity, "
+    "Vercel, TestFlight, Obsidian, the vault, dispatcher, HUD."
+)
 
 # Follow-up window: after Cletus finishes speaking, the mic stays open briefly so
 # a reply doesn't need the wake word again. This is what makes it feel like a
@@ -404,7 +416,8 @@ async def handle_transcription(audio_data: np.ndarray) -> None:
         segments, _info = whisper_model.transcribe(
             audio_data,
             language=WHISPER_LANGUAGE,
-            beam_size=1,
+            beam_size=WHISPER_BEAM_SIZE,
+            initial_prompt=WHISPER_VOCABULARY,
             vad_filter=True,
         )
         return " ".join(s.text.strip() for s in segments).strip()

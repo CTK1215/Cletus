@@ -142,6 +142,12 @@ class ElevenLabsTts:
         self.sample_rate = ELEVEN_SAMPLE_RATE
         self.fallback = fallback
         self._warned = False
+        # Set when the API says the account itself is the problem (quota,
+        # key, permissions). Stops the voice flip-flopping where short
+        # replies still fit under the remaining quota and long ones don't.
+        # An explicit "switch to eleven labs" builds a fresh instance via
+        # make_tts(), so the flag resets when Chris asks for a retry.
+        self._disabled = False
 
         if not self.api_key:
             log.warning(
@@ -182,7 +188,7 @@ class ElevenLabsTts:
         if not text:
             return
 
-        if self.api_key:
+        if self.api_key and not self._disabled:
             loop = asyncio.get_running_loop()
             try:
                 audio = await loop.run_in_executor(None, self._synthesize_sync, text)
@@ -196,12 +202,17 @@ class ElevenLabsTts:
                     detail = e.read()[:200].decode("utf-8", "replace")
                 except Exception:
                     pass
-                # A permissions or quota problem will not fix itself mid-session,
-                # so say it once rather than on every single reply.
-                if not self._warned:
+                # A quota, key, or permissions problem will not fix itself
+                # mid-session, so actually stop calling the API instead of just
+                # logging that we will. Anything else (5xx, timeout shapes) is
+                # transient and stays a per-reply fallback.
+                if e.code in (401, 402, 403):
+                    self._disabled = True
+                    log.error("elevenlabs HTTP %s: %s", e.code, detail)
+                    log.error("disabled for this session, using piper (say 'switch to eleven labs' to retry)")
+                elif not self._warned:
                     self._warned = True
                     log.error("elevenlabs HTTP %s: %s", e.code, detail)
-                    log.error("falling back to piper for the rest of this session")
                 else:
                     log.warning("elevenlabs HTTP %s, using piper", e.code)
             except Exception as e:
