@@ -42,6 +42,23 @@ def strip_markdown(text: str) -> str:
     return t.strip()
 
 
+_NON_WORD = re.compile(r"[^\w\s]")
+_WS = re.compile(r"\s+")
+
+
+def flatten_for_match(text: str) -> str:
+    """Flatten a transcript for phrase matching.
+
+    Whisper capitalizes and punctuates, so "run the tests on NurseTrack."
+    arrives with a period glued to the project name. Matching against raw
+    transcripts means every phrase table has to anticipate punctuation;
+    flattening once here means none of them do.
+    """
+    s = text.strip().lower()
+    s = _NON_WORD.sub(" ", s)
+    return _WS.sub(" ", s).strip()
+
+
 def clamp_for_speech(text: str, max_chars: int = 1500) -> str:
     """Cap TTS input so a runaway reply doesn't lock up playback."""
     if len(text) <= max_chars:

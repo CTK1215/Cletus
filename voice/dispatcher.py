@@ -27,6 +27,7 @@ import re
 import time
 
 from projects import Project, resolve, exists, spoken_list
+from text_utils import flatten_for_match
 from worker import Job, run_job
 
 log = logging.getLogger("cletus-dispatch")
@@ -95,8 +96,12 @@ class Dispatcher:
 
         reason_not_to is a spoken sentence when Chris clearly wanted a job but
         it cannot be started, so he hears why instead of silence.
+
+        Prefix and verb matching run on the flattened transcript so Whisper's
+        punctuation can't hide a phrase. The question check stays on the raw
+        text because it needs the "?" that flattening would strip.
         """
-        low = text.strip().lower()
+        low = flatten_for_match(text)
         explicit = any(p in low for p in EXPLICIT_PREFIXES)
         project = resolve(text)
 

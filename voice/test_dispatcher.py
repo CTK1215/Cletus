@@ -102,6 +102,43 @@ def test_every_alias_resolves_to_its_own_project():
             )
 
 
+# --- real Whisper output: capitalized and punctuated -----------------------
+# The original tests were all clean lowercase, and the dispatcher shipped
+# unable to match "NurseTrack." with a period glued on. Worse, punctuation
+# killed the LONG alias while the short one still matched mid-sentence, so
+# "the NurseTrack admin." dispatched to the mobile repo. These pin the fix.
+
+def test_punctuated_transcripts_dispatch():
+    for text, key in [
+        ("Run the tests on NurseTrack.", "nursetrack"),
+        ("Work on NurseTrack.", "nursetrack"),
+        ("Draft a blog post for Wendell.", "wendell"),
+        ("On NurseTrack, run the tests.", "nursetrack"),
+        ("Run the tests on the ServeSync API.", "api"),
+    ]:
+        got_key, go, _ = classify(text)
+        assert go is True, f"should dispatch: {text}"
+        assert got_key == key, f"{text} -> {got_key}, expected {key}"
+
+
+def test_punctuation_cannot_invert_longest_alias_wins():
+    """The wrong-repo case. A period after 'admin' must not make the short
+    'nursetrack' alias steal the match from 'nursetrack admin'."""
+    got_key, go, _ = classify("Fix the build on the NurseTrack admin.")
+    assert go is True
+    assert got_key == "admin"
+
+
+def test_punctuated_questions_still_stay_conversation():
+    for text in [
+        "What is the nurse app built with?",
+        "Is the backend running?",
+        "How is the admin dashboard doing?",
+    ]:
+        _, go, _ = classify(text)
+        assert go is False, f"must NOT dispatch: {text}"
+
+
 # --- explicit request with no project --------------------------------------
 
 def test_explicit_request_without_a_project_asks_which_one():

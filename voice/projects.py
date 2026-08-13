@@ -17,6 +17,8 @@ project is one entry and nothing else.
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from text_utils import flatten_for_match
+
 DEV = Path.home() / "dev"
 VAULT = Path.home() / "Documents" / "Brain"
 
@@ -121,8 +123,13 @@ def resolve(text: str) -> Project | None:
     Deliberately requires an explicit mention. Guessing which repo Chris
     meant and then editing files there is the worst possible failure mode
     for this feature, so silence is the correct answer when nothing matches.
+
+    Matching runs on the flattened transcript because Whisper glues
+    punctuation to the last word: "NurseTrack." must still match the alias
+    "nursetrack", and "the NurseTrack admin." must still let the longer
+    alias win over the shorter one.
     """
-    low = f" {text.lower()} "
+    low = f" {flatten_for_match(text)} "
     for alias, project in _ALIAS_INDEX:
         if f" {alias} " in low or low.startswith(f" {alias}") or low.endswith(f"{alias} "):
             return project

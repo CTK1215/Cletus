@@ -110,14 +110,19 @@ async def run_job(job: Job, on_progress=None) -> Job:
         max_turns=WORKER_MAX_TURNS,
     )
 
-    parts: list[str] = []
+    # Only the LAST assistant message becomes the spoken summary. The system
+    # prompt promises "your final message is read aloud"; collecting every
+    # text block would open the result with mid-job narration and, on a long
+    # job, drown the conclusion before the speech clamp.
+    last_text = ""
     try:
         async for message in query(prompt=job.request, options=options):
             if isinstance(message, AssistantMessage):
                 job.turns += 1
+                texts: list[str] = []
                 for block in message.content:
                     if isinstance(block, TextBlock):
-                        parts.append(block.text)
+                        texts.append(block.text)
                     elif isinstance(block, ToolUseBlock):
                         job.tool_calls += 1
                         if on_progress is not None and job.tool_calls % 10 == 0:
@@ -125,10 +130,13 @@ async def run_job(job: Job, on_progress=None) -> Job:
                                 await on_progress(job)
                             except Exception:
                                 pass
+                joined = "\n".join(t.strip() for t in texts if t and t.strip()).strip()
+                if joined:
+                    last_text = joined
             elif isinstance(message, ResultMessage):
                 job.turns = int(getattr(message, "num_turns", job.turns) or job.turns)
 
-        job.summary = "\n".join(p.strip() for p in parts if p and p.strip()).strip()
+        job.summary = last_text
         job.ok = bool(job.summary)
         if not job.summary:
             job.summary = "The job finished but did not report anything back."
