@@ -17,4 +17,7 @@ voice/cletus.pid
 logs/
 
 # Downloaded models (63MB Piper voice + wake word models, fetched on first run)
-voice/models/
+voice/models/*
+
+# the custom wake word model is trained, not downloaded - it ships with the repo
+!voice/models/hey_cleetus.onnx

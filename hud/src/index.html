@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ws://127.0.0.1:8765">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ws://127.0.0.1:8765; img-src 'self' data:">
   <title>Cletus</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -12,6 +12,7 @@
     <div id="state-label">IDLE</div>
     <div id="voice-status" class="offline" title="Voice service offline">● VOICE</div>
     <div id="followup" class="hidden" title="Mic is open, just talk">● GO AHEAD <span id="followup-count"></span></div>
+    <div id="mute-badge" class="hidden" title="Sounds muted (M)">MUTED</div>
     <button id="close-btn" title="Close">×</button>
 
     <div id="dialog">
@@ -19,556 +20,576 @@
       <div id="cletus-said" class="line"></div>
     </div>
 
+    <div id="image-screen" class="hidden">
+      <img id="image-el" alt="">
+      <div id="image-caption"></div>
+    </div>
+
     <div id="scene">
       <svg viewBox="0 0 720 456" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
 
         <defs>
-          <!-- ============ ATMOSPHERE ============ -->
-          <radialGradient id="bg-glow" cx="50%" cy="42%" r="72%">
-            <stop offset="0%"   stop-color="#0a3d5a" stop-opacity="0.95"/>
-            <stop offset="45%"  stop-color="#04121f" stop-opacity="1"/>
-            <stop offset="100%" stop-color="#00050a" stop-opacity="1"/>
+          <!-- room atmosphere -->
+          <radialGradient id="room-glow" cx="50%" cy="38%" r="80%">
+            <stop offset="0%"   stop-color="#0a2c46"/>
+            <stop offset="45%"  stop-color="#051423"/>
+            <stop offset="100%" stop-color="#01050b"/>
+          </radialGradient>
+          <radialGradient id="vignette" cx="50%" cy="45%" r="72%">
+            <stop offset="50%"  stop-color="#000" stop-opacity="0"/>
+            <stop offset="100%" stop-color="#000" stop-opacity="0.78"/>
           </radialGradient>
 
-          <radialGradient id="vignette" cx="50%" cy="48%" r="68%">
-            <stop offset="55%"  stop-color="#000000" stop-opacity="0"/>
-            <stop offset="100%" stop-color="#000000" stop-opacity="0.72"/>
-          </radialGradient>
-
-          <pattern id="pcb-grid" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-            <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#0a3a55" stroke-width="0.35" opacity="0.5"/>
-            <circle cx="0" cy="0" r="0.8" fill="#12b5e5" opacity="0.3"/>
-          </pattern>
-
-          <!-- ============ SHADOWS (gradient-based, cheap, no filter cost) ============ -->
-          <radialGradient id="shadow-soft" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"   stop-color="#000000" stop-opacity="0.85"/>
-            <stop offset="55%"  stop-color="#000208" stop-opacity="0.42"/>
-            <stop offset="100%" stop-color="#000208" stop-opacity="0"/>
-          </radialGradient>
-
-          <radialGradient id="shadow-contact" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"   stop-color="#000000" stop-opacity="0.95"/>
-            <stop offset="40%"  stop-color="#000000" stop-opacity="0.55"/>
-            <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-          </radialGradient>
-
-          <linearGradient id="wall-shadow" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stop-color="#000000" stop-opacity="0.55"/>
-            <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+          <!-- ceiling -->
+          <linearGradient id="ceil-face" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="#0b1620"/>
+            <stop offset="100%" stop-color="#040a12"/>
+          </linearGradient>
+          <linearGradient id="rail-amber" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%"   stop-color="#7a4a14" stop-opacity="0.1"/>
+            <stop offset="18%"  stop-color="#ffb347" stop-opacity="0.9"/>
+            <stop offset="50%"  stop-color="#ffd9a0"/>
+            <stop offset="82%"  stop-color="#ffb347" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#7a4a14" stop-opacity="0.1"/>
           </linearGradient>
 
-          <!-- ============ SURFACES ============ -->
-          <!-- Desk top: lit from the monitors (far edge) falling off toward the viewer -->
-          <linearGradient id="desk-top" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stop-color="#0d4a68" stop-opacity="0.95"/>
-            <stop offset="45%"  stop-color="#052839" stop-opacity="0.95"/>
-            <stop offset="100%" stop-color="#01111c" stop-opacity="0.98"/>
+          <!-- screens -->
+          <linearGradient id="screen-face" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="#08202f"/>
+            <stop offset="55%"  stop-color="#051726"/>
+            <stop offset="100%" stop-color="#03101d"/>
           </linearGradient>
-
-          <linearGradient id="desk-front" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stop-color="#03202f" stop-opacity="1"/>
-            <stop offset="100%" stop-color="#000a12" stop-opacity="1"/>
+          <linearGradient id="screen-sheen" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"   stop-color="#bfe9ff" stop-opacity="0.14"/>
+            <stop offset="28%"  stop-color="#bfe9ff" stop-opacity="0.02"/>
+            <stop offset="100%" stop-color="#bfe9ff" stop-opacity="0"/>
           </linearGradient>
-
-          <linearGradient id="screen-fade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stop-color="#06304a" stop-opacity="0.95"/>
-            <stop offset="100%" stop-color="#010d18" stop-opacity="0.95"/>
-          </linearGradient>
-
-          <!-- Emissive halo each monitor throws into the room -->
-          <radialGradient id="screen-emit" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"   stop-color="#3ee0ff" stop-opacity="0.30"/>
-            <stop offset="60%"  stop-color="#12b5e5" stop-opacity="0.10"/>
-            <stop offset="100%" stop-color="#12b5e5" stop-opacity="0"/>
+          <radialGradient id="center-halo" cx="50%" cy="50%" r="60%">
+            <stop offset="0%"   stop-color="#3ee0ff" stop-opacity="0.28"/>
+            <stop offset="100%" stop-color="#3ee0ff" stop-opacity="0"/>
           </radialGradient>
-
-          <!-- Volumetric spill from screen down onto the desk -->
-          <linearGradient id="light-cone" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stop-color="#3ee0ff" stop-opacity="0.20"/>
-            <stop offset="70%"  stop-color="#3ee0ff" stop-opacity="0.05"/>
+          <linearGradient id="reflect" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="#3ee0ff" stop-opacity="0.16"/>
             <stop offset="100%" stop-color="#3ee0ff" stop-opacity="0"/>
           </linearGradient>
 
-          <!-- Rim light: monitors are in front of him, so his silhouette edges catch it -->
-          <linearGradient id="rim-light" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stop-color="#7fe9ff" stop-opacity="0.85"/>
-            <stop offset="55%"  stop-color="#2aa8d8" stop-opacity="0.35"/>
-            <stop offset="100%" stop-color="#0a4d70" stop-opacity="0.10"/>
+          <!-- desk -->
+          <linearGradient id="desk-face" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="#0d1d2b"/>
+            <stop offset="30%"  stop-color="#071320"/>
+            <stop offset="100%" stop-color="#030910"/>
+          </linearGradient>
+          <linearGradient id="pad-glow" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="#0e3a54"/>
+            <stop offset="100%" stop-color="#062032"/>
           </linearGradient>
 
-          <!-- Body fill: dark core so contour lines read as sitting ON a mass -->
-          <linearGradient id="body-mass" x1="0.2" y1="0" x2="0.8" y2="1">
-            <stop offset="0%"   stop-color="#04283c" stop-opacity="0.88"/>
-            <stop offset="55%"  stop-color="#021724" stop-opacity="0.92"/>
-            <stop offset="100%" stop-color="#000a12" stop-opacity="0.95"/>
-          </linearGradient>
+          <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="2.4" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="glow-big" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="5" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
 
-          <linearGradient id="chair-mass" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"   stop-color="#020e18" stop-opacity="0.96"/>
-            <stop offset="50%"  stop-color="#041c2b" stop-opacity="0.96"/>
-            <stop offset="100%" stop-color="#01090f" stop-opacity="0.96"/>
-          </linearGradient>
+          <clipPath id="center-clip"><rect x="-104" y="-84" width="208" height="168" rx="4"/></clipPath>
 
-          <!-- CRT scanlines -->
-          <pattern id="scanlines" x="0" y="0" width="2" height="3" patternUnits="userSpaceOnUse">
-            <rect width="2" height="1.2" fill="#000000" opacity="0.30"/>
+          <pattern id="map-dots" x="0" y="0" width="4.6" height="4.6" patternUnits="userSpaceOnUse">
+            <circle cx="2.3" cy="2.3" r="1" fill="#7fd6f2"/>
           </pattern>
-
-          <!-- ============ FILTERS (small regions only, for cost) ============ -->
-          <filter id="glow-soft" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="1.4" result="b"/>
-            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-
-          <filter id="glow-strong" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="3" result="b"/>
-            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-
-          <filter id="glow-body" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="1.8" result="b"/>
-            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-
-          <!-- Clip so screen content can scroll without escaping the bezel -->
-          <clipPath id="clip-screen"><rect x="8" y="8" width="140" height="78" rx="1.5"/></clipPath>
         </defs>
 
-        <!-- ================= 1. BACKGROUND ================= -->
-        <rect width="720" height="456" fill="url(#bg-glow)"/>
-        <rect width="720" height="456" fill="url(#pcb-grid)" opacity="0.65"/>
+        <!-- ================= ROOM SHELL ================= -->
+        <rect width="720" height="456" fill="url(#room-glow)"/>
 
-        <!-- ================= 2. PCB TRACES ================= -->
-        <g id="pcb-traces" stroke="#0f7ea8" stroke-width="0.8" fill="none" opacity="0.5" filter="url(#glow-soft)">
-          <path id="trace-1" d="M 20 40 L 120 40 L 140 60 L 140 130 L 90 130 L 70 150"/>
-          <path id="trace-2" d="M 700 60 L 600 60 L 580 80 L 580 140 L 640 140"/>
-          <path id="trace-3" d="M 40 420 L 40 340 L 90 340 L 110 320 L 200 320"/>
-          <path id="trace-4" d="M 680 420 L 680 350 L 620 350 L 600 330 L 520 330"/>
-          <path id="trace-5" d="M 360 20 L 360 60"/>
-          <circle cx="20" cy="40"  r="2.4" fill="#12b5e5"/>
-          <circle cx="70" cy="150" r="2.4" fill="#12b5e5"/>
-          <circle cx="700" cy="60" r="2.4" fill="#12b5e5"/>
-          <circle cx="640" cy="140" r="2.4" fill="#12b5e5"/>
-          <circle cx="40" cy="420" r="2.4" fill="#12b5e5"/>
-          <circle cx="200" cy="320" r="2.4" fill="#12b5e5"/>
-          <circle cx="680" cy="420" r="2.4" fill="#12b5e5"/>
-          <circle cx="520" cy="330" r="2.4" fill="#12b5e5"/>
+        <!-- ceiling panels -->
+        <polygon points="0,0 720,0 720,88 470,52 250,52 0,88" fill="url(#ceil-face)"/>
+        <g stroke="#122736" stroke-width="0.8" opacity="0.9">
+          <line x1="0" y1="88" x2="250" y2="52"/>
+          <line x1="720" y1="88" x2="470" y2="52"/>
+          <line x1="250" y1="52" x2="470" y2="52"/>
+          <line x1="120" y1="0" x2="212" y2="52"/>
+          <line x1="600" y1="0" x2="508" y2="52"/>
+          <line x1="310" y1="0" x2="316" y2="52"/>
+          <line x1="410" y1="0" x2="404" y2="52"/>
+        </g>
+        <!-- amber light rails -->
+        <path d="M 118 14 L 254 58 L 466 58 L 602 14" fill="none" stroke="url(#rail-amber)" stroke-width="3" filter="url(#glow)"/>
+        <path d="M 88 6 L 240 66 L 480 66 L 632 6" fill="none" stroke="#e8f6ff" stroke-width="1" opacity="0.4"/>
+        <!-- recessed downlights over the center screen -->
+        <g class="downlights">
+          <circle cx="288" cy="78" r="2"/><circle cx="324" cy="80" r="2"/><circle cx="360" cy="81" r="2"/>
+          <circle cx="396" cy="80" r="2"/><circle cx="432" cy="78" r="2"/>
         </g>
 
-        <g id="pcb-signals" filter="url(#glow-strong)">
-          <circle r="1.9" fill="#3ee0ff" opacity="0.95">
-            <animateMotion dur="4.2s" repeatCount="indefinite"><mpath href="#trace-1"/></animateMotion>
-          </circle>
-          <circle r="1.5" fill="#7fffb9" opacity="0.85">
-            <animateMotion dur="5.6s" begin="1.4s" repeatCount="indefinite"><mpath href="#trace-1"/></animateMotion>
-          </circle>
-          <circle r="1.9" fill="#3ee0ff" opacity="0.95">
-            <animateMotion dur="3.6s" repeatCount="indefinite"><mpath href="#trace-2"/></animateMotion>
-          </circle>
-          <circle r="1.9" fill="#3ee0ff" opacity="0.95">
-            <animateMotion dur="4.8s" repeatCount="indefinite"><mpath href="#trace-3"/></animateMotion>
-          </circle>
-          <circle r="1.4" fill="#ffb547" opacity="0.85">
-            <animateMotion dur="6.2s" begin="2.1s" repeatCount="indefinite"><mpath href="#trace-3"/></animateMotion>
-          </circle>
-          <circle r="1.9" fill="#3ee0ff" opacity="0.95">
-            <animateMotion dur="4.4s" repeatCount="indefinite"><mpath href="#trace-4"/></animateMotion>
-          </circle>
-          <circle r="1.6" fill="#3ee0ff" opacity="0.9">
-            <animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#trace-5"/></animateMotion>
-          </circle>
+        <!-- ceiling vents -->
+        <g opacity="0.85">
+          <ellipse cx="96" cy="26" rx="26" ry="10" fill="#04121d" stroke="#1d4a66" stroke-width="1"/>
+          <ellipse cx="96" cy="26" rx="15" ry="5.5" fill="none" stroke="#3ee0ff" stroke-width="1" opacity="0.6" filter="url(#glow)"/>
+          <ellipse cx="624" cy="26" rx="26" ry="10" fill="#04121d" stroke="#1d4a66" stroke-width="1"/>
+          <ellipse cx="624" cy="26" rx="15" ry="5.5" fill="none" stroke="#3ee0ff" stroke-width="1" opacity="0.6" filter="url(#glow)"/>
         </g>
 
-        <!-- ================= 3. WALL BLOOM + MONITOR CAST SHADOWS ================= -->
-        <ellipse id="wall-bloom" cx="360" cy="200" rx="330" ry="86" fill="url(#screen-emit)"/>
-
-        <!-- each monitor drops a soft shadow onto the wall beneath it -->
-        <g id="wall-shadows" opacity="0.85">
-          <rect x="44"  y="228" width="144" height="26" fill="url(#wall-shadow)"/>
-          <rect x="212" y="228" width="144" height="26" fill="url(#wall-shadow)"/>
-          <rect x="380" y="228" width="144" height="26" fill="url(#wall-shadow)"/>
-          <rect x="548" y="228" width="144" height="26" fill="url(#wall-shadow)"/>
+        <!-- side walls with vent slats -->
+        <polygon points="0,88 24,98 24,332 0,352" fill="#050f18"/>
+        <polygon points="720,88 696,98 696,332 720,352" fill="#050f18"/>
+        <g class="slats" stroke-width="2.6">
+          <line x1="6"  y1="112" x2="6"  y2="326"/>
+          <line x1="12" y1="106" x2="12" y2="330"/>
+          <line x1="18" y1="101" x2="18" y2="331"/>
+          <line x1="702" y1="101" x2="702" y2="331"/>
+          <line x1="708" y1="106" x2="708" y2="330"/>
+          <line x1="714" y1="112" x2="714" y2="326"/>
         </g>
 
-        <!-- ================= 4. MONITOR BANK ================= -->
-        <g id="monitor-arc">
-          <!-- wall rail with its own contact shadow -->
-          <rect x="24" y="118" width="672" height="3" fill="#000000" opacity="0.5"/>
-          <rect x="24" y="112" width="672" height="4" rx="1" fill="#04202f" stroke="#0f7ea8" stroke-width="0.6" opacity="0.9"/>
-          <rect x="24" y="112" width="672" height="1.2" fill="#2aa8d8" opacity="0.5"/>
+        <!-- back wall behind screens -->
+        <rect x="24" y="88" width="672" height="216" fill="#040d16"/>
+        <g stroke="#0d2334" stroke-width="0.6" opacity="0.8">
+          <line x1="24" y1="120" x2="696" y2="120"/>
+          <line x1="24" y1="288" x2="696" y2="288"/>
+        </g>
 
-          <!-- monitor 1: NurseTrack -->
-          <g class="monitor mon-1" transform="translate(38 132)">
-            <ellipse class="emit" cx="78" cy="47" rx="120" ry="70" fill="url(#screen-emit)"/>
-            <line x1="78" y1="-20" x2="78" y2="0" stroke="#0f7ea8" stroke-width="1.4"/>
-            <rect x="72" y="-22" width="12" height="4" rx="1" fill="#052538" stroke="#0f7ea8" stroke-width="0.6"/>
-            <rect x="1.5" y="2.5" width="156" height="94" rx="3" fill="#000000" opacity="0.55"/>
-            <rect class="bezel" x="0" y="0" width="156" height="94" rx="3" fill="#061420" stroke="#12b5e5" stroke-width="1.4"/>
-            <rect x="5" y="5" width="146" height="84" rx="2" fill="#01090f" stroke="#0a4d70" stroke-width="0.6"/>
-            <rect class="screen" x="8" y="8" width="140" height="78" rx="1.5" fill="url(#screen-fade)" stroke="#0e7aa6" stroke-width="0.35"/>
-            <g clip-path="url(#clip-screen)">
-              <g class="data-scroll">
-                <rect x="12" y="30" width="24" height="1" fill="#0f7ea8" opacity="0.5"/>
-                <rect x="12" y="36" width="52" height="1" fill="#0f7ea8" opacity="0.4"/>
-                <rect x="12" y="42" width="34" height="1" fill="#0f7ea8" opacity="0.45"/>
-                <rect x="12" y="52" width="60" height="1" fill="#0f7ea8" opacity="0.35"/>
-                <rect x="12" y="62" width="28" height="1" fill="#0f7ea8" opacity="0.4"/>
-                <rect x="12" y="72" width="46" height="1" fill="#0f7ea8" opacity="0.35"/>
-                <rect x="12" y="82" width="30" height="1" fill="#0f7ea8" opacity="0.4"/>
-              </g>
-            </g>
-            <rect x="8" y="8" width="140" height="6" fill="#04202f" opacity="0.9"/>
-            <circle cx="14" cy="11" r="1.1" fill="#ff5a6a" opacity="0.85"/>
-            <circle cx="19" cy="11" r="1.1" fill="#ffb547" opacity="0.85"/>
-            <circle cx="24" cy="11" r="1.1" fill="#3ee0ff" opacity="0.85"/>
-            <text x="12" y="22" fill="#3ee0ff" font-size="6" letter-spacing="1.4" font-family="Consolas, monospace" font-weight="bold">NURSETRACK</text>
-            <text class="tag" x="146" y="22" text-anchor="end" fill="#ffb547" font-size="5" letter-spacing="1" font-family="Consolas, monospace">PRE-LAUNCH</text>
-            <text x="78" y="52" text-anchor="middle" fill="#a8e6ff" font-size="24" font-weight="bold" font-family="Consolas, monospace">0</text>
-            <text x="78" y="63" text-anchor="middle" fill="#0f7ea8" font-size="5" letter-spacing="2.5" font-family="Consolas, monospace">SUBSCRIBERS</text>
-            <g class="eq-bars">
-              <rect x="14"  y="78" width="5" height="4"/><rect x="22" y="78" width="5" height="4"/>
-              <rect x="30"  y="78" width="5" height="4"/><rect x="38" y="78" width="5" height="4"/>
-              <rect x="46"  y="78" width="5" height="4"/><rect x="54" y="78" width="5" height="4"/>
-              <rect x="62"  y="78" width="5" height="4"/><rect x="70" y="78" width="5" height="4"/>
-              <rect x="78"  y="78" width="5" height="4"/><rect x="86" y="78" width="5" height="4"/>
-              <rect x="94"  y="78" width="5" height="4"/><rect x="102" y="78" width="5" height="4"/>
-              <rect x="110" y="78" width="5" height="4"/><rect x="118" y="78" width="5" height="4"/>
-              <rect x="126" y="78" width="5" height="4"/><rect x="134" y="78" width="5" height="4"/>
-            </g>
-            <rect class="scan" x="8" y="8" width="140" height="78" fill="url(#scanlines)" opacity="0.5"/>
-            <rect class="sweep" x="8" y="8" width="140" height="12" fill="#7fe9ff" opacity="0"/>
-            <circle cx="150" cy="89" r="1" fill="#3ee0ff" opacity="0.9"/>
+        <!-- ================= LEFT WALL SCREEN · NURSETRACK ================= -->
+        <g class="panel wallscreen" transform="translate(30 96) skewY(-3)">
+          <rect x="-4" y="-4" width="216" height="180" rx="5" fill="#081521" stroke="#1d4a66" stroke-width="1.6"/>
+          <rect x="0" y="0" width="208" height="172" rx="3" fill="url(#screen-face)"/>
+          <rect x="0" y="0" width="208" height="172" rx="3" fill="url(#screen-sheen)"/>
+          <path class="scr-corner" d="M 4 12 V 4 H 12"/><path class="scr-corner" d="M 196 4 H 204 V 12"/>
+          <path class="scr-corner" d="M 204 160 V 168 H 196"/><path class="scr-corner" d="M 12 168 H 4 V 160"/>
+
+          <text class="s-title" x="10" y="14">NURSETRACK</text>
+          <text class="s-sub" x="10" y="23">MOBILE · SERVESYNC API · ADMIN</text>
+          <circle class="p-dot p-dot-off" cx="198" cy="10" r="2.6"/>
+          <line class="s-rule" x1="8" y1="28" x2="200" y2="28"/>
+
+          <!-- twin gauge dials -->
+          <g transform="translate(34 58)">
+            <circle r="20" fill="none" class="dial-face"/>
+            <circle r="20" fill="none" class="dial-tick" stroke-dasharray="1 4.2"/>
+            <path class="dial-arc" d="M -14 14 A 20 20 0 1 1 14 14" fill="none"/>
+            <line class="dial-needle" x1="0" y1="0" x2="-11" y2="11"/>
+            <circle r="2" class="dial-hub"/>
+            <text class="s-key" x="0" y="30" text-anchor="middle">SUBSCRIBERS</text>
+            <text class="s-big" x="0" y="-26" text-anchor="middle">—</text>
+          </g>
+          <g transform="translate(82 58)">
+            <circle r="14" fill="none" class="dial-face"/>
+            <circle r="14" fill="none" class="dial-tick" stroke-dasharray="1 3.6"/>
+            <line class="dial-needle" x1="0" y1="0" x2="-8" y2="8"/>
+            <circle r="1.6" class="dial-hub"/>
+            <text class="s-key" x="0" y="24" text-anchor="middle">MRR</text>
+            <text class="s-big" x="0" y="-20" text-anchor="middle">—</text>
           </g>
 
-          <!-- monitor 2: Unshackled -->
-          <g class="monitor mon-2" transform="translate(206 132)">
-            <ellipse class="emit" cx="78" cy="47" rx="120" ry="70" fill="url(#screen-emit)"/>
-            <line x1="78" y1="-20" x2="78" y2="0" stroke="#0f7ea8" stroke-width="1.4"/>
-            <rect x="72" y="-22" width="12" height="4" rx="1" fill="#052538" stroke="#0f7ea8" stroke-width="0.6"/>
-            <rect x="1.5" y="2.5" width="156" height="94" rx="3" fill="#000000" opacity="0.55"/>
-            <rect class="bezel" x="0" y="0" width="156" height="94" rx="3" fill="#061420" stroke="#12b5e5" stroke-width="1.4"/>
-            <rect x="5" y="5" width="146" height="84" rx="2" fill="#01090f" stroke="#0a4d70" stroke-width="0.6"/>
-            <rect class="screen" x="8" y="8" width="140" height="78" rx="1.5" fill="url(#screen-fade)" stroke="#0e7aa6" stroke-width="0.35"/>
-            <g clip-path="url(#clip-screen)">
-              <polyline class="graph-line" points="14,80 25,79 36,80 47,77 58,76 69,74 80,75 91,72 102,71 113,69 124,70 135,67 144,66"
-                        stroke="#3ee0ff" stroke-width="0.9" fill="none" opacity="0.9"/>
-              <g class="grid-drift" opacity="0.25">
-                <line x1="0" y1="30" x2="160" y2="30" stroke="#0f7ea8" stroke-width="0.3"/>
-                <line x1="0" y1="45" x2="160" y2="45" stroke="#0f7ea8" stroke-width="0.3"/>
-                <line x1="0" y1="60" x2="160" y2="60" stroke="#0f7ea8" stroke-width="0.3"/>
-                <line x1="0" y1="75" x2="160" y2="75" stroke="#0f7ea8" stroke-width="0.3"/>
-              </g>
+          <!-- empty-but-honest bar chart -->
+          <g transform="translate(10 96)">
+            <rect x="0" y="0" width="92" height="52" fill="none" stroke="#0f3448" stroke-width="0.8"/>
+            <line x1="0" y1="13" x2="92" y2="13" stroke="#0c2a3c" stroke-width="0.5"/>
+            <line x1="0" y1="26" x2="92" y2="26" stroke="#0c2a3c" stroke-width="0.5"/>
+            <line x1="0" y1="39" x2="92" y2="39" stroke="#0c2a3c" stroke-width="0.5"/>
+            <g class="bar-ghost">
+              <rect x="7"  y="46" width="8" height="6"/><rect x="20" y="46" width="8" height="6"/>
+              <rect x="33" y="46" width="8" height="6"/><rect x="46" y="46" width="8" height="6"/>
+              <rect x="59" y="46" width="8" height="6"/><rect x="72" y="46" width="8" height="6"/>
             </g>
-            <rect x="8" y="8" width="140" height="6" fill="#04202f" opacity="0.9"/>
-            <circle cx="14" cy="11" r="1.1" fill="#ff5a6a" opacity="0.85"/>
-            <circle cx="19" cy="11" r="1.1" fill="#ffb547" opacity="0.85"/>
-            <circle cx="24" cy="11" r="1.1" fill="#3ee0ff" opacity="0.85"/>
-            <text x="12" y="22" fill="#3ee0ff" font-size="6" letter-spacing="1.4" font-family="Consolas, monospace" font-weight="bold">UNSHACKLED</text>
-            <text class="tag" x="146" y="22" text-anchor="end" fill="#7fffb9" font-size="5" letter-spacing="1" font-family="Consolas, monospace">LIVE</text>
-            <text x="78" y="52" text-anchor="middle" fill="#a8e6ff" font-size="24" font-weight="bold" font-family="Consolas, monospace">·</text>
-            <text x="78" y="63" text-anchor="middle" fill="#0f7ea8" font-size="5" letter-spacing="2.5" font-family="Consolas, monospace">FOLLOWERS</text>
-            <rect class="scan" x="8" y="8" width="140" height="78" fill="url(#scanlines)" opacity="0.5"/>
-            <rect class="sweep" x="8" y="8" width="140" height="12" fill="#7fe9ff" opacity="0"/>
-            <circle cx="150" cy="89" r="1" fill="#3ee0ff" opacity="0.9"/>
+            <text class="s-micro" x="46" y="31" text-anchor="middle">AWAITING FEED</text>
+            <text class="s-key" x="0" y="60">SUBS / WEEK</text>
           </g>
 
-          <!-- monitor 3: Wendell + speaking waveform -->
-          <g class="monitor mon-3" transform="translate(374 132)">
-            <ellipse class="emit" cx="78" cy="47" rx="120" ry="70" fill="url(#screen-emit)"/>
-            <line x1="78" y1="-20" x2="78" y2="0" stroke="#0f7ea8" stroke-width="1.4"/>
-            <rect x="72" y="-22" width="12" height="4" rx="1" fill="#052538" stroke="#0f7ea8" stroke-width="0.6"/>
-            <rect x="1.5" y="2.5" width="156" height="94" rx="3" fill="#000000" opacity="0.55"/>
-            <rect class="bezel" x="0" y="0" width="156" height="94" rx="3" fill="#061420" stroke="#12b5e5" stroke-width="1.4"/>
-            <rect x="5" y="5" width="146" height="84" rx="2" fill="#01090f" stroke="#0a4d70" stroke-width="0.6"/>
-            <rect class="screen" x="8" y="8" width="140" height="78" rx="1.5" fill="url(#screen-fade)" stroke="#0e7aa6" stroke-width="0.35"/>
-            <rect x="8" y="8" width="140" height="6" fill="#04202f" opacity="0.9"/>
-            <circle cx="14" cy="11" r="1.1" fill="#ff5a6a" opacity="0.85"/>
-            <circle cx="19" cy="11" r="1.1" fill="#ffb547" opacity="0.85"/>
-            <circle cx="24" cy="11" r="1.1" fill="#3ee0ff" opacity="0.85"/>
-            <text x="12" y="22" fill="#3ee0ff" font-size="6" letter-spacing="1.4" font-family="Consolas, monospace" font-weight="bold">WENDELL TURNER</text>
-            <text class="tag" x="146" y="22" text-anchor="end" fill="#ffb547" font-size="5" letter-spacing="1" font-family="Consolas, monospace">6MO TARGET</text>
-            <g class="mon3-content">
-              <text x="78" y="52" text-anchor="middle" fill="#a8e6ff" font-size="24" font-weight="bold" font-family="Consolas, monospace" class="wendell-num">0<tspan fill="#0f7ea8" font-size="13">/3</tspan></text>
-              <text x="78" y="63" text-anchor="middle" fill="#0f7ea8" font-size="5" letter-spacing="2.5" font-family="Consolas, monospace">LEADS</text>
-              <rect x="14" y="76" width="130" height="4" rx="0.5" fill="#01090f" stroke="#0a4d70" stroke-width="0.3"/>
-            </g>
-            <g class="waveform-overlay">
-              <rect class="wf-bar" x="14"  y="42" width="4.5" height="12"/>
-              <rect class="wf-bar" x="20"  y="38" width="4.5" height="20"/>
-              <rect class="wf-bar" x="26"  y="34" width="4.5" height="28"/>
-              <rect class="wf-bar" x="32"  y="30" width="4.5" height="36"/>
-              <rect class="wf-bar" x="38"  y="36" width="4.5" height="24"/>
-              <rect class="wf-bar" x="44"  y="40" width="4.5" height="16"/>
-              <rect class="wf-bar" x="50"  y="32" width="4.5" height="32"/>
-              <rect class="wf-bar" x="56"  y="28" width="4.5" height="40"/>
-              <rect class="wf-bar" x="62"  y="34" width="4.5" height="28"/>
-              <rect class="wf-bar" x="68"  y="38" width="4.5" height="20"/>
-              <rect class="wf-bar" x="74"  y="30" width="4.5" height="36"/>
-              <rect class="wf-bar" x="80"  y="26" width="4.5" height="44"/>
-              <rect class="wf-bar" x="86"  y="32" width="4.5" height="32"/>
-              <rect class="wf-bar" x="92"  y="36" width="4.5" height="24"/>
-              <rect class="wf-bar" x="98"  y="34" width="4.5" height="28"/>
-              <rect class="wf-bar" x="104" y="40" width="4.5" height="16"/>
-              <rect class="wf-bar" x="110" y="30" width="4.5" height="36"/>
-              <rect class="wf-bar" x="116" y="36" width="4.5" height="24"/>
-              <rect class="wf-bar" x="122" y="38" width="4.5" height="20"/>
-              <rect class="wf-bar" x="128" y="42" width="4.5" height="12"/>
-              <rect class="wf-bar" x="134" y="40" width="4.5" height="16"/>
-              <rect class="wf-bar" x="140" y="44" width="4.5" height="8"/>
-            </g>
-            <rect class="scan" x="8" y="8" width="140" height="78" fill="url(#scanlines)" opacity="0.5"/>
-            <rect class="sweep" x="8" y="8" width="140" height="12" fill="#7fe9ff" opacity="0"/>
-            <circle cx="150" cy="89" r="1" fill="#3ee0ff" opacity="0.9"/>
+          <!-- status ledger -->
+          <g transform="translate(110 36)" font-family="Consolas, monospace">
+            <text class="s-key" x="0" y="8">APP STORE</text><text class="s-val" x="90" y="8" text-anchor="end">PRE-LAUNCH</text>
+            <line class="s-rule" x1="0" y1="12" x2="90" y2="12"/>
+            <text class="s-key" x="0" y="21">API · AZURE</text><text class="s-val nofeed" id="v-nt-api" x="90" y="21" text-anchor="end">—</text>
+            <line class="s-rule" x1="0" y1="25" x2="90" y2="25"/>
+            <text class="s-key" x="0" y="34">ADMIN · VERCEL</text><text class="s-val nofeed" id="v-nt-admin" x="90" y="34" text-anchor="end">—</text>
+            <line class="s-rule" x1="0" y1="38" x2="90" y2="38"/>
+            <text class="s-key" x="0" y="47">LANDING</text><text class="s-val nofeed" id="v-nt-landing" x="90" y="47" text-anchor="end">—</text>
+            <line class="s-rule" x1="0" y1="51" x2="90" y2="51"/>
+            <text class="s-key" x="0" y="60">TESTFLIGHT</text><text class="s-val" x="90" y="60" text-anchor="end">OTA</text>
+            <line class="s-rule" x1="0" y1="64" x2="90" y2="64"/>
+            <text class="s-key" x="0" y="73">REVENUECAT</text><text class="s-val nofeed" x="90" y="73" text-anchor="end">—</text>
           </g>
 
-          <!-- monitor 4: kelly.dev -->
-          <g class="monitor mon-4" transform="translate(542 132)">
-            <ellipse class="emit" cx="78" cy="47" rx="120" ry="70" fill="url(#screen-emit)"/>
-            <line x1="78" y1="-20" x2="78" y2="0" stroke="#0f7ea8" stroke-width="1.4"/>
-            <rect x="72" y="-22" width="12" height="4" rx="1" fill="#052538" stroke="#0f7ea8" stroke-width="0.6"/>
-            <rect x="1.5" y="2.5" width="156" height="94" rx="3" fill="#000000" opacity="0.55"/>
-            <rect class="bezel" x="0" y="0" width="156" height="94" rx="3" fill="#061420" stroke="#12b5e5" stroke-width="1.4"/>
-            <rect x="5" y="5" width="146" height="84" rx="2" fill="#01090f" stroke="#0a4d70" stroke-width="0.6"/>
-            <rect class="screen" x="8" y="8" width="140" height="78" rx="1.5" fill="url(#screen-fade)" stroke="#0e7aa6" stroke-width="0.35"/>
-            <g clip-path="url(#clip-screen)">
-              <g class="code-scroll" opacity="0.5">
-                <rect x="12" y="28" width="40" height="1.2" fill="#3ee0ff"/>
-                <rect x="16" y="33" width="58" height="1.2" fill="#0f7ea8"/>
-                <rect x="16" y="38" width="30" height="1.2" fill="#0f7ea8"/>
-                <rect x="12" y="43" width="48" height="1.2" fill="#7fffb9"/>
-                <rect x="16" y="48" width="66" height="1.2" fill="#0f7ea8"/>
-                <rect x="16" y="53" width="24" height="1.2" fill="#0f7ea8"/>
-                <rect x="12" y="58" width="52" height="1.2" fill="#3ee0ff"/>
-                <rect x="16" y="63" width="38" height="1.2" fill="#0f7ea8"/>
-                <rect x="16" y="68" width="60" height="1.2" fill="#0f7ea8"/>
-                <rect x="12" y="73" width="34" height="1.2" fill="#ffb547"/>
-                <rect x="16" y="78" width="50" height="1.2" fill="#0f7ea8"/>
-                <rect x="16" y="83" width="28" height="1.2" fill="#0f7ea8"/>
-              </g>
+          <!-- greeked fine print -->
+          <g class="greek" transform="translate(110 118)">
+            <rect x="0" y="0"  width="84" height="2"/><rect x="0" y="5"  width="66" height="2"/>
+            <rect x="0" y="10" width="90" height="2"/><rect x="0" y="15" width="52" height="2"/>
+            <rect x="0" y="20" width="78" height="2"/><rect x="0" y="25" width="61" height="2"/>
+            <rect x="0" y="30" width="88" height="2"/>
+          </g>
+          <text class="s-foot" x="10" y="166">FEED OFFLINE · PHASE B WIRES LIVE DATA</text>
+          <!-- side tick ruler -->
+          <g class="ruler" stroke-width="0.7">
+            <line x1="204" y1="34" x2="204" y2="152"/>
+            <line x1="202" y1="44" x2="204" y2="44"/><line x1="202" y1="64" x2="204" y2="64"/>
+            <line x1="202" y1="84" x2="204" y2="84"/><line x1="202" y1="104" x2="204" y2="104"/>
+            <line x1="202" y1="124" x2="204" y2="124"/><line x1="202" y1="144" x2="204" y2="144"/>
+          </g>
+        </g>
+        <!-- left screen reflection -->
+        <polygon points="30,290 238,278 238,306 30,318" fill="url(#reflect)" opacity="0.5"/>
+
+        <!-- ================= RIGHT WALL SCREEN · UNSHACKLED TRUTH ================= -->
+        <g class="panel wallscreen" transform="translate(482 90) skewY(3)">
+          <rect x="-4" y="-4" width="216" height="180" rx="5" fill="#081521" stroke="#1d4a66" stroke-width="1.6"/>
+          <rect x="0" y="0" width="208" height="172" rx="3" fill="url(#screen-face)"/>
+          <rect x="0" y="0" width="208" height="172" rx="3" fill="url(#screen-sheen)"/>
+          <path class="scr-corner" d="M 4 12 V 4 H 12"/><path class="scr-corner" d="M 196 4 H 204 V 12"/>
+          <path class="scr-corner" d="M 204 160 V 168 H 196"/><path class="scr-corner" d="M 12 168 H 4 V 160"/>
+
+          <text class="s-title" x="10" y="14">UNSHACKLED TRUTH</text>
+          <text class="s-sub" x="10" y="23">MINISTRY · STORE · SOCIAL</text>
+          <circle class="p-dot p-dot-off" cx="198" cy="10" r="2.6"/>
+          <line class="s-rule" x1="8" y1="28" x2="200" y2="28"/>
+
+          <!-- tiktok scope -->
+          <g transform="translate(44 66)">
+            <circle r="27" fill="none" class="dial-face"/>
+            <circle r="27" fill="none" class="dial-tick" stroke-dasharray="1 5.6"/>
+            <circle r="19" fill="none" class="dial-face" opacity="0.6"/>
+            <line class="scope-x" x1="-27" y1="0" x2="27" y2="0"/>
+            <line class="scope-x" x1="0" y1="-27" x2="0" y2="27"/>
+            <text class="s-big" x="0" y="-4" text-anchor="middle">—</text>
+            <text class="s-key" x="0" y="8" text-anchor="middle">TIKTOK</text>
+            <text class="s-micro" x="0" y="38" text-anchor="middle">@UNSHACKLEDTRUTH4</text>
+          </g>
+          <!-- ig scope -->
+          <g transform="translate(44 128)">
+            <circle r="15" fill="none" class="dial-face"/>
+            <circle r="15" fill="none" class="dial-tick" stroke-dasharray="1 3.9"/>
+            <text class="s-big" x="0" y="-1" text-anchor="middle">—</text>
+            <text class="s-key" x="0" y="9" text-anchor="middle">IG</text>
+          </g>
+
+          <!-- ledger -->
+          <g transform="translate(96 36)" font-family="Consolas, monospace">
+            <text class="s-key" x="0" y="8">SITE</text><text class="s-val nofeed" id="v-ut-site" x="104" y="8" text-anchor="end">—</text>
+            <line class="s-rule" x1="0" y1="12" x2="104" y2="12"/>
+            <text class="s-key" x="0" y="21">STORE · STRIPE / EMAIL · RESEND</text>
+            <line class="s-rule" x1="0" y1="25" x2="104" y2="25"/>
+            <text class="s-key" x="0" y="34">CONTENT LOOP</text><text class="s-val" x="104" y="34" text-anchor="end">SUN PM</text>
+            <line class="s-rule" x1="0" y1="38" x2="104" y2="38"/>
+            <text class="s-key" x="0" y="47">MEMOIR</text><text class="s-val" x="104" y="47" text-anchor="end">KDP</text>
+            <line class="s-rule" x1="0" y1="51" x2="104" y2="51"/>
+            <text class="s-key" x="0" y="60">WORKBOOK</text><text class="s-val" x="104" y="60" text-anchor="end">KDP</text>
+            <line class="s-rule" x1="0" y1="64" x2="104" y2="64"/>
+            <text class="s-key" x="0" y="73">SALES</text><text class="s-val nofeed" x="104" y="73" text-anchor="end">—</text>
+          </g>
+
+          <g class="greek" transform="translate(96 118)">
+            <rect x="0" y="0"  width="96" height="2"/><rect x="0" y="5"  width="70" height="2"/>
+            <rect x="0" y="10" width="88" height="2"/><rect x="0" y="15" width="58" height="2"/>
+            <rect x="0" y="20" width="92" height="2"/><rect x="0" y="25" width="66" height="2"/>
+            <rect x="0" y="30" width="80" height="2"/>
+          </g>
+          <text class="s-foot" x="10" y="166">FEED OFFLINE · PHASE B WIRES LIVE DATA</text>
+          <g class="ruler" stroke-width="0.7">
+            <line x1="204" y1="34" x2="204" y2="152"/>
+            <line x1="202" y1="44" x2="204" y2="44"/><line x1="202" y1="64" x2="204" y2="64"/>
+            <line x1="202" y1="84" x2="204" y2="84"/><line x1="202" y1="104" x2="204" y2="104"/>
+            <line x1="202" y1="124" x2="204" y2="124"/><line x1="202" y1="144" x2="204" y2="144"/>
+          </g>
+        </g>
+        <polygon points="482,296 690,284 690,312 482,324" fill="url(#reflect)" opacity="0.5"/>
+
+        <!-- ================= CENTER SCREEN · THE FOCUS ================= -->
+        <rect x="248" y="94" width="224" height="180" rx="7" fill="#0a1826" stroke="#2a6b8f" stroke-width="2"/>
+        <rect x="248" y="94" width="224" height="180" rx="7" fill="none" class="center-frame" filter="url(#glow-big)"/>
+        <!-- flanking light dots -->
+        <g class="flank-dots">
+          <circle cx="240" cy="130" r="2.4"/><circle cx="240" cy="152" r="2.4"/><circle cx="240" cy="174" r="2.4"/>
+          <circle cx="240" cy="196" r="2.4"/><circle cx="240" cy="218" r="2.4"/>
+          <circle cx="480" cy="130" r="2.4"/><circle cx="480" cy="152" r="2.4"/><circle cx="480" cy="174" r="2.4"/>
+          <circle cx="480" cy="196" r="2.4"/><circle cx="480" cy="218" r="2.4"/>
+        </g>
+
+        <g transform="translate(360 184)">
+          <g clip-path="url(#center-clip)">
+            <rect x="-104" y="-84" width="208" height="168" fill="url(#screen-face)"/>
+            <circle r="92" fill="url(#center-halo)"/>
+            <!-- fine grid inside the focus screen -->
+            <g stroke="#0c2f44" stroke-width="0.4" opacity="0.7">
+              <line x1="-104" y1="-42" x2="104" y2="-42"/><line x1="-104" y1="0" x2="104" y2="0"/>
+              <line x1="-104" y1="42" x2="104" y2="42"/><line x1="-52" y1="-84" x2="-52" y2="84"/>
+              <line x1="0" y1="-84" x2="0" y2="84"/><line x1="52" y1="-84" x2="52" y2="84"/>
             </g>
-            <rect x="8" y="8" width="140" height="6" fill="#04202f" opacity="0.9"/>
-            <circle cx="14" cy="11" r="1.1" fill="#ff5a6a" opacity="0.85"/>
-            <circle cx="19" cy="11" r="1.1" fill="#ffb547" opacity="0.85"/>
-            <circle cx="24" cy="11" r="1.1" fill="#3ee0ff" opacity="0.85"/>
-            <text x="12" y="22" fill="#3ee0ff" font-size="6" letter-spacing="1.4" font-family="Consolas, monospace" font-weight="bold">KELLY.DEV</text>
-            <text class="tag" x="146" y="22" text-anchor="end" fill="#7fffb9" font-size="5" letter-spacing="1" font-family="Consolas, monospace">ACTIVE</text>
-            <text x="78" y="40" text-anchor="middle" fill="#0f7ea8" font-size="5" letter-spacing="3" font-family="Consolas, monospace">NOW WORKING ON</text>
-            <text x="78" y="60" text-anchor="middle" fill="#a8e6ff" font-size="14" font-weight="bold" letter-spacing="1" font-family="Consolas, monospace">CLETUS HUD</text>
-            <circle class="heartbeat" cx="78" cy="74" r="2" fill="#7fffb9" opacity="0.9"/>
-            <text x="78" y="85" text-anchor="middle" fill="#0f7ea8" font-size="4" letter-spacing="1.5" font-family="Consolas, monospace" opacity="0.75">CYBER HQ</text>
-            <rect class="scan" x="8" y="8" width="140" height="78" fill="url(#scanlines)" opacity="0.5"/>
-            <rect class="sweep" x="8" y="8" width="140" height="12" fill="#7fe9ff" opacity="0"/>
-            <circle cx="150" cy="89" r="1" fill="#3ee0ff" opacity="0.9"/>
+
+            <!-- the dotted world: the reference's map, greeked in dot-matrix -->
+            <g id="world" fill="url(#map-dots)" opacity="0.33">
+              <path d="M -88 -52 Q -70 -62 -50 -56 Q -38 -50 -44 -40 Q -50 -28 -66 -26 Q -80 -28 -86 -38 Z"/>
+              <path d="M -58 -18 Q -46 -20 -44 -8 Q -42 8 -50 18 Q -58 22 -62 12 Q -66 -4 -58 -18 Z"/>
+              <path d="M -16 -56 Q -2 -62 8 -56 Q 14 -50 6 -46 Q -6 -42 -14 -46 Z"/>
+              <path d="M -14 -40 Q 2 -44 10 -32 Q 16 -16 6 -2 Q -4 8 -12 -2 Q -20 -20 -14 -40 Z"/>
+              <path d="M 18 -58 Q 48 -68 74 -56 Q 88 -48 76 -38 Q 56 -26 38 -32 Q 20 -38 18 -50 Z"/>
+              <path d="M 40 -26 Q 52 -28 54 -16 Q 52 -6 42 -8 Q 34 -16 40 -26 Z"/>
+              <path d="M 64 6 Q 78 2 84 12 Q 86 22 74 24 Q 62 22 64 6 Z"/>
+            </g>
+            <g stroke="#2a7ca8" stroke-width="0.35" opacity="0.35" fill="none">
+              <path d="M -104 -30 Q 0 -44 104 -30"/>
+              <path d="M -104 6 Q 0 -6 104 6"/>
+              <path d="M -104 40 Q 0 30 104 40"/>
+            </g>
+
+            <!-- sonar lives on this screen while listening -->
+            <g id="sonar">
+              <circle class="sonar-ring s1" r="58" fill="none"/>
+              <circle class="sonar-ring s2" r="58" fill="none"/>
+            </g>
+
+            <!-- orbital ring around the identity -->
+            <g class="spin spin-slow"><circle r="64" fill="none" class="ring-dash" stroke-dasharray="10 7 2 7"/></g>
+            <g class="spin spin-counter"><path class="ring-seg" d="M 56 0 A 56 56 0 0 1 -28 48.5" fill="none"/></g>
+            <circle class="ring-inner" r="46" fill="none" stroke-dasharray="0.5 5.2"/>
+
+            <text id="core-eyebrow" class="t-eyebrow" x="0" y="-52" text-anchor="middle">READY</text>
+            <text id="core-name"    class="t-name"    x="0" y="-22" text-anchor="middle">CLETUS</text>
+            <text id="core-status"  class="t-status"  x="0" y="-6"  text-anchor="middle">STANDING BY</text>
+
+            <line x1="-88" y1="4" x2="88" y2="4" stroke="#134a66" stroke-width="0.7"/>
+
+            <!-- live telemetry: every value below arrives over the socket -->
+            <g font-family="Consolas, monospace">
+              <text class="c-key" x="-96" y="18">LINK</text><text class="c-val" id="p-link" x="-52" y="18">OFFLINE</text>
+              <circle id="p-core-dot" class="p-dot p-dot-off" cx="-60" cy="15.5" r="2"/>
+              <text class="c-key" x="-14" y="18">VER</text><text class="c-val" id="p-version" x="16" y="18">—</text>
+              <text class="c-key" x="52" y="18">UP</text><text class="c-val" id="p-uptime" x="70" y="18">—</text>
+
+              <text class="c-key" x="-96" y="32">STATE</text><text class="c-val" id="p-state" x="-52" y="32">IDLE</text>
+              <text class="c-key" x="-14" y="32">EXCH</text><text class="c-val" id="p-exchanges" x="16" y="32">0</text>
+              <text class="c-key" x="52" y="32">LAST</text><text class="c-val" id="p-last" x="70" y="32">—</text>
+
+              <text class="c-key" x="-96" y="46">WAKE</text><text class="c-val" id="p-wake" x="-52" y="46">—</text>
+              <text class="c-key" x="-14" y="46">FOCUS</text><text class="c-val" id="p-focus" x="22" y="46">NONE</text>
+
+              <text class="c-key" x="-96" y="60">JOBS</text>
+              <circle id="p-jobs-dot" class="p-dot p-dot-off" cx="-64" cy="57.5" r="2"/>
+              <text class="c-key" x="-52" y="60">RUN</text><text class="c-val" id="p-jobs-run" x="-24" y="60">0</text>
+              <text class="c-key" x="-8" y="60">DONE</text><text class="c-val" id="p-jobs-done" x="24" y="60">0</text>
+              <text class="c-key" x="40" y="60">FAIL</text><text class="c-val" id="p-jobs-fail" x="70" y="60">0</text>
+            </g>
+
+            <!-- speech bars along the screen foot -->
+            <g id="core-wave">
+              <rect class="wbar" x="-26"   y="68" width="3" height="6" rx="1.2"/>
+              <rect class="wbar" x="-19.5" y="68" width="3" height="6" rx="1.2"/>
+              <rect class="wbar" x="-13"   y="68" width="3" height="6" rx="1.2"/>
+              <rect class="wbar" x="-6.5"  y="68" width="3" height="6" rx="1.2"/>
+              <rect class="wbar" x="0"     y="68" width="3" height="6" rx="1.2"/>
+              <rect class="wbar" x="6.5"   y="68" width="3" height="6" rx="1.2"/>
+              <rect class="wbar" x="13"    y="68" width="3" height="6" rx="1.2"/>
+              <rect class="wbar" x="19.5"  y="68" width="3" height="6" rx="1.2"/>
+              <rect class="wbar" x="26"    y="68" width="3" height="6" rx="1.2"/>
+            </g>
+          </g>
+        </g>
+        <polygon points="252,300 468,300 458,330 262,330" fill="url(#reflect)" opacity="0.65"/>
+
+        <!-- ================= CONSOLE BAND · THE DAILY WORK ================= -->
+        <rect x="24" y="300" width="672" height="52" fill="#050f19"/>
+        <line x1="24" y1="300" x2="696" y2="300" stroke="#3ee0ff" stroke-width="0.8" opacity="0.35"/>
+
+        <!-- ALAPHIA CHARTING -->
+        <g class="panel mini" transform="translate(30 304) skewX(-4)">
+          <rect width="102" height="44" rx="3" class="mini-frame"/>
+          <text class="m-title" x="6" y="9">ALAPHIA · SN CHARTING</text>
+          <circle class="p-dot p-dot-off" cx="95" cy="6.5" r="1.8"/>
+          <line class="s-rule" x1="4" y1="12" x2="98" y2="12"/>
+          <g class="doc-lines">
+            <rect x="8" y="17" width="56" height="2"/><rect x="8" y="22" width="44" height="2"/>
+            <rect x="8" y="27" width="60" height="2"/><rect x="8" y="32" width="38" height="2"/>
+          </g>
+          <path class="m-check" d="M 76 19 l 3 3 l 5 -6"/>
+          <path class="m-check" d="M 76 29 l 3 3 l 5 -6"/>
+          <text class="m-foot" x="6" y="41">MANUAL · ON CHRIS</text>
+        </g>
+
+        <!-- CROWN CHARTING -->
+        <g class="panel mini" transform="translate(143 304) skewX(-2)">
+          <rect width="102" height="44" rx="3" class="mini-frame"/>
+          <text class="m-title" x="6" y="9">CROWN · SN CHARTING</text>
+          <circle class="p-dot p-dot-off" cx="95" cy="6.5" r="1.8"/>
+          <line class="s-rule" x1="4" y1="12" x2="98" y2="12"/>
+          <g class="doc-lines">
+            <rect x="8" y="17" width="52" height="2"/><rect x="8" y="22" width="62" height="2"/>
+            <rect x="8" y="27" width="40" height="2"/><rect x="8" y="32" width="58" height="2"/>
+          </g>
+          <path class="m-check" d="M 76 24 l 3 3 l 5 -6"/>
+          <text class="m-foot" x="6" y="41">MANUAL · ON CHRIS</text>
+        </g>
+
+        <!-- ROUTE OPTIMIZER -->
+        <g class="panel mini" transform="translate(252 304)">
+          <rect width="102" height="44" rx="3" class="mini-frame"/>
+          <text class="m-title" x="6" y="9">ROUTE OPTIMIZER</text>
+          <circle class="p-dot p-dot-on" cx="95" cy="6.5" r="1.8"/>
+          <line class="s-rule" x1="4" y1="12" x2="98" y2="12"/>
+          <g class="map-road">
+            <path d="M 8 34 L 34 18 L 62 26 L 94 15"/>
+            <path d="M 14 40 L 46 36 L 78 40" opacity="0.5"/>
+          </g>
+          <path class="map-route" d="M 10 32 L 34 20 L 52 28 L 70 22 L 92 17"/>
+          <rect class="map-stop-start" x="8" y="30" width="4" height="4"/>
+          <circle class="map-stop" cx="34" cy="20" r="1.8"/><circle class="map-stop" cx="52" cy="28" r="1.8"/>
+          <circle class="map-stop" cx="70" cy="22" r="1.8"/><circle class="map-stop" cx="92" cy="17" r="1.8"/>
+          <text class="m-foot" x="6" y="41">GMAPS ROUTES · ADMIN DASH</text>
+        </g>
+
+        <!-- FLOWER ROUTE SHEETS -->
+        <g class="panel mini" transform="translate(363 304)">
+          <rect width="102" height="44" rx="3" class="mini-frame"/>
+          <text class="m-title" x="6" y="9">FLOWER · ROUTE SHEETS</text>
+          <circle class="p-dot p-dot-on" cx="95" cy="6.5" r="1.8"/>
+          <line class="s-rule" x1="4" y1="12" x2="98" y2="12"/>
+          <g class="sheet">
+            <rect x="10" y="16" width="24" height="20" rx="1"/>
+            <rect x="14" y="14" width="24" height="20" rx="1"/>
+            <rect x="18" y="12" width="24" height="20" rx="1" class="sheet-top"/>
+          </g>
+          <g class="doc-lines">
+            <rect x="50" y="18" width="40" height="2"/><rect x="50" y="23" width="30" height="2"/>
+            <rect x="50" y="28" width="36" height="2"/>
+          </g>
+          <text class="m-foot" x="6" y="41">AUTOMATED · SUN 8:05A</text>
+        </g>
+
+        <!-- CROWN MILEAGE -->
+        <g class="panel mini" transform="translate(473 304) skewX(2)">
+          <rect width="102" height="44" rx="3" class="mini-frame"/>
+          <text class="m-title" x="6" y="9">CROWN · MILEAGE</text>
+          <circle class="p-dot p-dot-on" cx="95" cy="6.5" r="1.8"/>
+          <line class="s-rule" x1="4" y1="12" x2="98" y2="12"/>
+          <g class="tbl">
+            <line x1="8" y1="16" x2="94" y2="16"/><line x1="8" y1="22" x2="94" y2="22"/>
+            <line x1="8" y1="28" x2="94" y2="28"/><line x1="8" y1="34" x2="94" y2="34"/>
+            <line x1="36" y1="15" x2="36" y2="35"/><line x1="66" y1="15" x2="66" y2="35"/>
+          </g>
+          <text class="m-foot" x="6" y="41">CSV · ONE CLICK · ADMIN DASH</text>
+        </g>
+
+        <!-- WEEK SCHEDULE -->
+        <g class="panel mini" transform="translate(586 304) skewX(4)">
+          <rect width="102" height="44" rx="3" class="mini-frame"/>
+          <text class="m-title" x="6" y="9">WEEK SCHEDULE</text>
+          <circle class="p-dot p-dot-off" cx="95" cy="6.5" r="1.8"/>
+          <line class="s-rule" x1="4" y1="12" x2="98" y2="12"/>
+          <g class="week">
+            <rect x="8"  y="16" width="10" height="18"/><rect x="20" y="16" width="10" height="18" class="wk-on"/>
+            <rect x="32" y="16" width="10" height="18"/><rect x="44" y="16" width="10" height="18" class="wk-on"/>
+            <rect x="56" y="16" width="10" height="18" class="wk-on"/><rect x="68" y="16" width="10" height="18"/>
+            <rect x="80" y="16" width="10" height="18"/>
+          </g>
+          <text class="m-foot" x="6" y="41">3 AGENCIES · ADMIN DASH</text>
+        </g>
+
+        <!-- ================= THE DESK ================= -->
+        <polygon points="0,456 88,352 632,352 720,456" fill="url(#desk-face)"/>
+        <line x1="88" y1="352" x2="632" y2="352" stroke="#2a6b8f" stroke-width="1.2" opacity="0.9"/>
+        <line x1="88" y1="354" x2="632" y2="354" stroke="#3ee0ff" stroke-width="0.6" opacity="0.4"/>
+        <g stroke="#0b2233" stroke-width="0.8" opacity="0.9">
+          <line x1="180" y1="352" x2="120" y2="456"/>
+          <line x1="540" y1="352" x2="600" y2="456"/>
+        </g>
+
+        <!-- left worksurface: the route sheet -->
+        <g class="deskpad" transform="translate(150 372) skewX(-14)">
+          <rect width="120" height="54" rx="4" fill="url(#pad-glow)" stroke="#2a7ca8" stroke-width="1"/>
+          <text class="m-title" x="8" y="11">ROUTE SHEET · TODAY</text>
+          <line class="s-rule" x1="6" y1="15" x2="114" y2="15"/>
+          <g class="doc-lines">
+            <rect x="10" y="21" width="70" height="2.4"/><rect x="10" y="28" width="56" height="2.4"/>
+            <rect x="10" y="35" width="74" height="2.4"/><rect x="10" y="42" width="48" height="2.4"/>
+          </g>
+          <rect x="90" y="20" width="22" height="26" fill="none" stroke="#2a7ca8" stroke-width="0.8"/>
+          <path class="map-route" d="M 93 42 L 98 30 L 104 36 L 109 24"/>
+        </g>
+
+        <!-- center worksurface: the keyboard -->
+        <g class="deskpad" transform="translate(296 384)">
+          <rect width="128" height="48" rx="5" fill="url(#pad-glow)" stroke="#2a7ca8" stroke-width="1"/>
+          <g class="keys">
+            <g transform="translate(8 7)">
+              <rect width="9" height="7" rx="1"/><rect x="11" width="9" height="7" rx="1"/><rect x="22" width="9" height="7" rx="1"/><rect x="33" width="9" height="7" rx="1"/><rect x="44" width="9" height="7" rx="1"/><rect x="55" width="9" height="7" rx="1"/><rect x="66" width="9" height="7" rx="1"/><rect x="77" width="9" height="7" rx="1"/><rect x="88" width="9" height="7" rx="1"/><rect x="99" width="13" height="7" rx="1"/>
+            </g>
+            <g transform="translate(8 16)">
+              <rect width="13" height="7" rx="1"/><rect x="15" width="9" height="7" rx="1"/><rect x="26" width="9" height="7" rx="1"/><rect x="37" width="9" height="7" rx="1"/><rect x="48" width="9" height="7" rx="1"/><rect x="59" width="9" height="7" rx="1"/><rect x="70" width="9" height="7" rx="1"/><rect x="81" width="9" height="7" rx="1"/><rect x="92" width="20" height="7" rx="1"/>
+            </g>
+            <g transform="translate(8 25)">
+              <rect width="16" height="7" rx="1"/><rect x="18" width="9" height="7" rx="1"/><rect x="29" width="9" height="7" rx="1"/><rect x="40" width="9" height="7" rx="1"/><rect x="51" width="9" height="7" rx="1"/><rect x="62" width="9" height="7" rx="1"/><rect x="73" width="9" height="7" rx="1"/><rect x="84" width="28" height="7" rx="1"/>
+            </g>
+            <g transform="translate(8 34)">
+              <rect width="20" height="7" rx="1"/><rect x="22" width="68" height="7" rx="1"/><rect x="92" width="20" height="7" rx="1"/>
+            </g>
           </g>
         </g>
 
-        <!-- ================= 5. VOLUMETRIC LIGHT SPILL onto the desk ================= -->
-        <g id="light-spill" opacity="0.85">
-          <path class="cone" d="M 46 226 L 190 226 L 232 344 L 106 344 Z" fill="url(#light-cone)"/>
-          <path class="cone" d="M 214 226 L 358 226 L 366 344 L 258 344 Z" fill="url(#light-cone)"/>
-          <path class="cone" d="M 382 226 L 526 226 L 486 344 L 378 344 Z" fill="url(#light-cone)"/>
-          <path class="cone" d="M 550 226 L 694 226 L 638 344 L 512 344 Z" fill="url(#light-cone)"/>
+        <!-- right worksurface: the chart -->
+        <g class="deskpad" transform="translate(452 372) skewX(14)">
+          <rect width="120" height="54" rx="4" fill="url(#pad-glow)" stroke="#2a7ca8" stroke-width="1"/>
+          <text class="m-title" x="8" y="11">SN NOTE · DRAFT</text>
+          <line class="s-rule" x1="6" y1="15" x2="114" y2="15"/>
+          <g class="doc-lines">
+            <rect x="24" y="21" width="82" height="2.4"/><rect x="24" y="28" width="66" height="2.4"/>
+            <rect x="24" y="35" width="86" height="2.4"/><rect x="24" y="42" width="58" height="2.4"/>
+          </g>
+          <path class="m-check" d="M 10 21 l 3 3 l 5 -6"/>
+          <path class="m-check" d="M 10 35 l 3 3 l 5 -6"/>
         </g>
 
-        <!-- ================= 6. FLOOR ================= -->
-        <g id="floor" stroke="#0a3a55" stroke-width="0.6" fill="none" opacity="0.42">
-          <path d="M 0 400 L 720 400"/>
-          <path d="M 0 420 L 720 420"/>
-          <path d="M 0 440 L 720 440"/>
-          <path d="M 60 400 L -20 456"/>
-          <path d="M 180 400 L 140 456"/>
-          <path d="M 300 400 L 280 456"/>
-          <path d="M 420 400 L 440 456"/>
-          <path d="M 540 400 L 580 456"/>
-          <path d="M 660 400 L 740 456"/>
+        <!-- outer worksurfaces: mixer sliders and comm knobs -->
+        <g class="deskpad" transform="translate(38 398) skewX(-18)">
+          <rect width="74" height="40" rx="3" fill="url(#pad-glow)" stroke="#2a7ca8" stroke-width="0.9"/>
+          <g class="slider">
+            <line x1="12" y1="8" x2="12" y2="32"/><circle cx="12" cy="14" r="2.2"/>
+            <line x1="28" y1="8" x2="28" y2="32"/><circle cx="28" cy="24" r="2.2"/>
+            <line x1="44" y1="8" x2="44" y2="32"/><circle cx="44" cy="18" r="2.2"/>
+            <line x1="60" y1="8" x2="60" y2="32"/><circle cx="60" cy="27" r="2.2"/>
+          </g>
+        </g>
+        <g class="deskpad" transform="translate(610 398) skewX(18)">
+          <rect width="74" height="40" rx="3" fill="url(#pad-glow)" stroke="#2a7ca8" stroke-width="0.9"/>
+          <g class="knob">
+            <circle cx="20" cy="15" r="6"/><line x1="20" y1="15" x2="24" y2="11"/>
+            <circle cx="44" cy="15" r="6"/><line x1="44" y1="15" x2="44" y2="9"/>
+            <circle cx="20" cy="31" r="4"/><line x1="20" y1="31" x2="17" y2="28"/>
+            <circle cx="44" cy="31" r="4"/><line x1="44" y1="31" x2="47" y2="29"/>
+            <circle cx="62" cy="23" r="2" class="knob-led"/>
+          </g>
         </g>
 
-        <!-- chair + operator cast shadow pooled on the floor -->
-        <ellipse cx="360" cy="418" rx="118" ry="20" fill="url(#shadow-soft)" opacity="0.9"/>
-
-        <!-- ================= 7. CHAIR (behind the operator) ================= -->
+        <!-- the chair, rim-lit from the screens -->
         <g id="chair">
-          <path d="M 276 300 Q 360 288 444 300 L 448 396 Q 360 408 272 396 Z"
-                fill="url(#chair-mass)" stroke="#0a4d70" stroke-width="1"/>
-          <path d="M 276 300 Q 360 288 444 300" fill="none" stroke="#12b5e5" stroke-width="1.2" opacity="0.75"/>
-          <g stroke="#0a4d70" stroke-width="0.6" opacity="0.55" fill="none">
-            <path d="M 300 296 L 298 398"/>
-            <path d="M 330 292 L 329 402"/>
-            <path d="M 390 292 L 391 402"/>
-            <path d="M 420 296 L 422 398"/>
-          </g>
-          <path d="M 316 290 Q 360 280 404 290 L 404 302 Q 360 293 316 302 Z"
-                fill="#03151f" stroke="#0f7ea8" stroke-width="0.9" opacity="0.9"/>
-          <rect x="352" y="396" width="16" height="22" fill="#02121b" stroke="#0a4d70" stroke-width="0.7"/>
-          <path d="M 318 424 L 402 424" stroke="#0a4d70" stroke-width="1.4" fill="none" opacity="0.8"/>
-          <path d="M 360 418 L 322 428 M 360 418 L 398 428 M 360 418 L 360 432" stroke="#0a4d70" stroke-width="1.1" opacity="0.8"/>
+          <path d="M 322 456 L 326 408 Q 326 398 336 398 L 384 398 Q 394 398 394 408 L 398 456 Z" fill="#04090f"/>
+          <path d="M 328 456 L 331 412 Q 331 404 339 404 L 381 404 Q 389 404 389 412 L 392 456" fill="none" stroke="#123246" stroke-width="1"/>
+          <path d="M 336 398 Q 360 392 384 398" fill="none" stroke="#2a7ca8" stroke-width="1.4" opacity="0.8"/>
+          <line x1="338" y1="412" x2="382" y2="412" stroke="#0d2536" stroke-width="0.8"/>
+          <line x1="336" y1="422" x2="384" y2="422" stroke="#0d2536" stroke-width="0.8"/>
+          <line x1="334" y1="432" x2="386" y2="432" stroke="#0d2536" stroke-width="0.8"/>
         </g>
 
-        <!-- ================= 8. DESK ================= -->
-        <g id="desk">
-          <!-- shadow the desk casts down onto the floor -->
-          <ellipse cx="360" cy="384" rx="290" ry="16" fill="url(#shadow-soft)" opacity="0.75"/>
-          <!-- top surface, lit from the far (monitor) edge -->
-          <path d="M 120 340 L 600 340 L 640 372 L 80 372 Z" fill="url(#desk-top)" stroke="#0f7ea8" stroke-width="1.1"/>
-          <!-- specular line along the back edge where the screens hit it -->
-          <path d="M 120 340 L 600 340" stroke="#7fe9ff" stroke-width="0.9" opacity="0.55"/>
-          <!-- front lip -->
-          <path d="M 80 372 L 640 372 L 640 382 L 80 382 Z" fill="url(#desk-front)" stroke="#0a4d70" stroke-width="0.8"/>
-          <path d="M 80 372 L 640 372" stroke="#2aa8d8" stroke-width="0.6" opacity="0.45"/>
+        <!-- floor edge light strips -->
+        <path d="M 0 380 L 88 352" stroke="#3ee0ff" stroke-width="1.6" opacity="0.7" filter="url(#glow)"/>
+        <path d="M 720 380 L 632 352" stroke="#3ee0ff" stroke-width="1.6" opacity="0.7" filter="url(#glow)"/>
+        <path d="M 0 452 L 130 456" stroke="#3ee0ff" stroke-width="1" opacity="0.35"/>
+        <path d="M 720 452 L 590 456" stroke="#3ee0ff" stroke-width="1" opacity="0.35"/>
 
-          <!-- keyboard, with contact shadow -->
-          <ellipse cx="360" cy="364" rx="92" ry="9" fill="url(#shadow-contact)" opacity="0.8"/>
-          <g transform="translate(280 344)">
-            <rect x="0" y="0" width="160" height="18" rx="1.5" fill="#03192a" stroke="#12b5e5" stroke-width="0.8"/>
-            <rect x="0" y="0" width="160" height="2.5" fill="#2aa8d8" opacity="0.35"/>
-            <g class="keys" fill="#0f7ea8" opacity="0.5">
-              <rect x="6"   y="4" width="10" height="3"/><rect x="18"  y="4" width="10" height="3"/>
-              <rect x="30"  y="4" width="10" height="3"/><rect x="42"  y="4" width="10" height="3"/>
-              <rect x="54"  y="4" width="10" height="3"/><rect x="66"  y="4" width="10" height="3"/>
-              <rect x="78"  y="4" width="10" height="3"/><rect x="90"  y="4" width="10" height="3"/>
-              <rect x="102" y="4" width="10" height="3"/><rect x="114" y="4" width="10" height="3"/>
-              <rect x="126" y="4" width="10" height="3"/><rect x="138" y="4" width="10" height="3"/>
-              <rect x="6"   y="9" width="10" height="3"/><rect x="18"  y="9" width="10" height="3"/>
-              <rect x="30"  y="9" width="10" height="3"/><rect x="42"  y="9" width="10" height="3"/>
-              <rect x="54"  y="9" width="10" height="3"/><rect x="66"  y="9" width="10" height="3"/>
-              <rect x="78"  y="9" width="10" height="3"/><rect x="90"  y="9" width="10" height="3"/>
-              <rect x="102" y="9" width="10" height="3"/><rect x="114" y="9" width="10" height="3"/>
-              <rect x="126" y="9" width="10" height="3"/>
-              <rect x="30"  y="14" width="100" height="3"/>
-            </g>
-          </g>
-
-          <!-- mouse -->
-          <ellipse cx="470" cy="358" rx="12" ry="6" fill="url(#shadow-contact)" opacity="0.75"/>
-          <ellipse cx="470" cy="353" rx="9" ry="6" fill="#03192a" stroke="#12b5e5" stroke-width="0.8"/>
-          <path d="M 470 348 L 470 352" stroke="#0f7ea8" stroke-width="0.6"/>
-        </g>
-
-        <!-- ================= 9. OPERATOR ================= -->
-        <!-- shadow he throws forward onto the desk from the screen light -->
-        <ellipse cx="360" cy="352" rx="76" ry="13" fill="url(#shadow-contact)" opacity="0.55"/>
-
-        <g id="operator" filter="url(#glow-body)">
-          <g class="op-body">
-
-            <!-- solid mass so contours read as sitting on a body -->
-            <path class="mass" d="M 292 316 Q 300 300 322 292 L 398 292 Q 420 300 428 316
-                                   Q 418 348 406 374 L 314 374 Q 302 348 292 316 Z"
-                  fill="url(#body-mass)" stroke="none"/>
-            <ellipse class="mass" cx="360" cy="246" rx="26" ry="30" fill="url(#body-mass)"/>
-
-            <!-- head -->
-            <ellipse class="edge" cx="360" cy="246" rx="26" ry="30" fill="none" stroke="#3ee0ff" stroke-width="1.5"/>
-            <!-- vertical crown seam -->
-            <path class="contour" d="M 360 216 Q 362 246 360 276" fill="none" stroke="#2aa8d8" stroke-width="0.8" opacity="0.8"/>
-            <!-- horizontal skull contours: these are what make it read round -->
-            <path class="contour" d="M 336 234 Q 360 240 384 234" fill="none" stroke="#2aa8d8" stroke-width="0.7" opacity="0.65"/>
-            <path class="contour" d="M 334 248 Q 360 255 386 248" fill="none" stroke="#2aa8d8" stroke-width="0.7" opacity="0.6"/>
-            <path class="contour" d="M 338 262 Q 360 269 382 262" fill="none" stroke="#2aa8d8" stroke-width="0.7" opacity="0.55"/>
-            <!-- nape hairline -->
-            <path class="edge" d="M 340 268 Q 360 276 380 268" fill="none" stroke="#3ee0ff" stroke-width="1" opacity="0.9"/>
-            <!-- ears -->
-            <path class="edge" d="M 333 244 Q 329 251 333 258" fill="none" stroke="#3ee0ff" stroke-width="1.1"/>
-            <path class="edge" d="M 387 244 Q 391 251 387 258" fill="none" stroke="#3ee0ff" stroke-width="1.1"/>
-
-            <!-- neck + trapezius -->
-            <path class="edge" d="M 347 272 Q 344 284 336 296" fill="none" stroke="#3ee0ff" stroke-width="1.3"/>
-            <path class="edge" d="M 373 272 Q 376 284 384 296" fill="none" stroke="#3ee0ff" stroke-width="1.3"/>
-            <path class="contour" d="M 348 282 Q 360 286 372 282" fill="none" stroke="#2aa8d8" stroke-width="0.7" opacity="0.6"/>
-            <!-- traps sweeping down to the shoulder caps -->
-            <path class="edge" d="M 336 296 Q 312 300 292 316" fill="none" stroke="#3ee0ff" stroke-width="1.4"/>
-            <path class="edge" d="M 384 296 Q 408 300 428 316" fill="none" stroke="#3ee0ff" stroke-width="1.4"/>
-
-            <!-- deltoid caps -->
-            <path class="contour" d="M 292 316 Q 288 328 296 338" fill="none" stroke="#2aa8d8" stroke-width="0.9" opacity="0.8"/>
-            <path class="contour" d="M 428 316 Q 432 328 424 338" fill="none" stroke="#2aa8d8" stroke-width="0.9" opacity="0.8"/>
-
-            <!-- back: spine, scapulae, lats -->
-            <path class="edge" d="M 360 292 L 360 372" fill="none" stroke="#3ee0ff" stroke-width="1.1" opacity="0.9"/>
-            <g class="contour" stroke="#2aa8d8" stroke-width="0.6" opacity="0.55" fill="none">
-              <path d="M 355 306 L 365 306"/><path d="M 355 318 L 365 318"/>
-              <path d="M 355 330 L 365 330"/><path d="M 355 342 L 365 342"/>
-              <path d="M 356 354 L 364 354"/>
-            </g>
-            <path class="contour" d="M 306 314 Q 322 330 340 318" fill="none" stroke="#2aa8d8" stroke-width="0.8" opacity="0.7"/>
-            <path class="contour" d="M 414 314 Q 398 330 380 318" fill="none" stroke="#2aa8d8" stroke-width="0.8" opacity="0.7"/>
-            <!-- horizontal cross-contours: the main volume cue -->
-            <path class="contour" d="M 298 322 Q 360 332 422 322" fill="none" stroke="#2aa8d8" stroke-width="0.7" opacity="0.5"/>
-            <path class="contour" d="M 300 338 Q 360 348 420 338" fill="none" stroke="#2aa8d8" stroke-width="0.7" opacity="0.45"/>
-            <path class="contour" d="M 306 354 Q 360 363 414 354" fill="none" stroke="#2aa8d8" stroke-width="0.7" opacity="0.4"/>
-            <!-- lat taper to waist -->
-            <path class="edge" d="M 292 316 Q 300 346 314 374" fill="none" stroke="#3ee0ff" stroke-width="1.4"/>
-            <path class="edge" d="M 428 316 Q 420 346 406 374" fill="none" stroke="#3ee0ff" stroke-width="1.4"/>
-            <path class="edge" d="M 314 374 L 406 374" fill="none" stroke="#3ee0ff" stroke-width="1" opacity="0.8"/>
-
-            <!-- arms: shoulder, elbow, forearm, wrist -->
-            <!-- left -->
-            <path class="edge" d="M 294 320 Q 268 336 266 354 Q 268 366 288 368" fill="none" stroke="#3ee0ff" stroke-width="1.5"/>
-            <path class="edge" d="M 310 326 Q 292 340 292 354 Q 296 364 310 364" fill="none" stroke="#3ee0ff" stroke-width="1.2" opacity="0.8"/>
-            <path class="contour" d="M 274 338 Q 284 344 294 338" fill="none" stroke="#2aa8d8" stroke-width="0.6" opacity="0.6"/>
-            <path class="contour" d="M 270 352 Q 282 358 292 352" fill="none" stroke="#2aa8d8" stroke-width="0.6" opacity="0.55"/>
-            <!-- right -->
-            <path class="edge" d="M 426 320 Q 452 336 454 354 Q 452 366 432 368" fill="none" stroke="#3ee0ff" stroke-width="1.5"/>
-            <path class="edge" d="M 410 326 Q 428 340 428 354 Q 424 364 410 364" fill="none" stroke="#3ee0ff" stroke-width="1.2" opacity="0.8"/>
-            <path class="contour" d="M 446 338 Q 436 344 426 338" fill="none" stroke="#2aa8d8" stroke-width="0.6" opacity="0.6"/>
-            <path class="contour" d="M 450 352 Q 438 358 428 352" fill="none" stroke="#2aa8d8" stroke-width="0.6" opacity="0.55"/>
-
-            <!-- hands on the keys -->
-            <g class="hand hand-l">
-              <path class="edge" d="M 288 362 Q 300 358 312 362 Q 314 370 306 374 Q 294 376 288 370 Z"
-                    fill="#02202f" stroke="#3ee0ff" stroke-width="1.1"/>
-              <g stroke="#7fe9ff" stroke-width="0.7" opacity="0.85" fill="none">
-                <path class="finger" d="M 292 368 L 291 376"/>
-                <path class="finger" d="M 298 369 L 297 377"/>
-                <path class="finger" d="M 304 369 L 304 377"/>
-                <path class="finger" d="M 310 367 L 311 375"/>
-              </g>
-            </g>
-            <g class="hand hand-r">
-              <path class="edge" d="M 432 362 Q 420 358 408 362 Q 406 370 414 374 Q 426 376 432 370 Z"
-                    fill="#02202f" stroke="#3ee0ff" stroke-width="1.1"/>
-              <g stroke="#7fe9ff" stroke-width="0.7" opacity="0.85" fill="none">
-                <path class="finger" d="M 428 368 L 429 376"/>
-                <path class="finger" d="M 422 369 L 423 377"/>
-                <path class="finger" d="M 416 369 L 416 377"/>
-                <path class="finger" d="M 410 367 L 409 375"/>
-              </g>
-            </g>
-
-            <!-- rim light: screens are in front, so his edges catch them -->
-            <g id="rim" opacity="0.7">
-              <path d="M 292 316 Q 300 346 314 374" fill="none" stroke="url(#rim-light)" stroke-width="2.4"/>
-              <path d="M 428 316 Q 420 346 406 374" fill="none" stroke="url(#rim-light)" stroke-width="2.4"/>
-              <path d="M 336 296 Q 312 300 292 316" fill="none" stroke="url(#rim-light)" stroke-width="2"/>
-              <path d="M 384 296 Q 408 300 428 316" fill="none" stroke="url(#rim-light)" stroke-width="2"/>
-              <ellipse cx="360" cy="246" rx="26" ry="30" fill="none" stroke="url(#rim-light)" stroke-width="1.6" opacity="0.6"/>
-            </g>
-
-            <!-- joint nodes: the mesh/point-cloud read from the reference -->
-            <g id="nodes" fill="#7fe9ff">
-              <circle class="node" cx="360" cy="216" r="1.5"/>
-              <circle class="node" cx="347" cy="272" r="1.4"/>
-              <circle class="node" cx="373" cy="272" r="1.4"/>
-              <circle class="node" cx="336" cy="296" r="1.6"/>
-              <circle class="node" cx="384" cy="296" r="1.6"/>
-              <circle class="node" cx="292" cy="316" r="2"/>
-              <circle class="node" cx="428" cy="316" r="2"/>
-              <circle class="node" cx="266" cy="354" r="1.8"/>
-              <circle class="node" cx="454" cy="354" r="1.8"/>
-              <circle class="node" cx="360" cy="292" r="1.6"/>
-              <circle class="node" cx="360" cy="332" r="1.3"/>
-              <circle class="node" cx="360" cy="372" r="1.4"/>
-              <circle class="node" cx="314" cy="374" r="1.4"/>
-              <circle class="node" cx="406" cy="374" r="1.4"/>
-            </g>
-          </g>
-        </g>
-
-        <!-- ================= 10. FOREGROUND ================= -->
+        <!-- ================= FOREGROUND ================= -->
         <rect width="720" height="456" fill="url(#vignette)" pointer-events="none"/>
       </svg>
+
+      <div id="topstrip">
+        <span id="ts-date">—</span><span class="ts-sep">▪</span><span id="ts-clock">--:--:--</span><span class="ts-sep">▪</span><span id="ts-fps">-- FPS</span><span class="ts-sep">▪</span><span id="ts-mem">-- MB</span><span class="ts-sep">▪</span><span id="ts-activity" title="socket activity">◉</span>
+      </div>
+      <div id="hexcol"><div id="hexcol-inner"></div></div>
+      <div id="ticker"><span id="ticker-text">CLETUS OS · BOOTING…</span></div>
+      <div id="scanlines"></div>
     </div>
+
+    <form id="type-bar" autocomplete="off">
+      <span id="type-prompt">›</span>
+      <input id="type-input" type="text" placeholder="type to cletus…" spellcheck="false">
+    </form>
 
     <div id="controls">
       <button data-state="idle" class="active">Idle</button>

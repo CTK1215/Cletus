@@ -23,7 +23,7 @@ from dispatcher import Dispatcher
 from tts import make_tts, PiperTts, ElevenLabsTts
 from text_utils import strip_markdown, clamp_for_speech
 
-VERSION = "0.10.3"
+VERSION = "0.15.0"
 PID_FILE = Path(__file__).parent / "cletus.pid"
 
 
@@ -44,9 +44,33 @@ def _remove_pid_file() -> None:
 HOST = "127.0.0.1"
 PORT = 8765
 
-# Wake word
-WAKE_WORD = "hey_jarvis"
-WAKE_THRESHOLD = 0.75
+# Generated images: anything that lands in this folder pops onto the HUD's
+# main screen and stays on disk as the archive. The voice brain is told to
+# save its image work here; any other tool that drops a file in works too.
+IMAGE_DIR = Path.home() / "Pictures" / "Cletus"
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+IMAGE_MAX_BYTES = 8 * 1024 * 1024   # data-URI over a local socket; keep it sane
+IMAGE_POLL_S = 2.0
+
+# Phase B live feeds: real uptime probes against the production sites. This is
+# the first genuinely live business telemetry on the deck; anything the probe
+# can't prove stays a dash on screen. Any HTTP response counts as UP (an auth
+# wall still proves the server is alive); only timeouts and refusals are DOWN.
+SITES = (
+    ("v-nt-api",     "https://servesync-api.azurewebsites.net/"),
+    ("v-nt-admin",   "https://nursetrack-admin.vercel.app/"),
+    ("v-nt-landing", "https://nursetrack.app/"),
+    ("v-ut-site",    "https://unshackledtruthmedia.com/"),
+)
+SITE_POLL_S = 120
+
+# Wake word: a custom "hey cleetus" model trained 2026-08-13 on the official
+# openWakeWord Colab (spelling is phonetic, chosen by ear from the synthesized
+# samples). DIY models run less sure of themselves than the pretrained packs,
+# so the threshold starts lower than hey_jarvis's 0.75; tune by ear in the room.
+WAKE_WORD = "hey_cleetus"
+WAKE_MODEL_PATH = Path(__file__).parent / "models" / "hey_cleetus.onnx"
+WAKE_THRESHOLD = 0.6
 WAKE_COOLDOWN_S = 2.0
 
 # Audio
@@ -190,9 +214,20 @@ async def handler(websocket) -> None:
         async for raw in websocket:
             try:
                 data = json.loads(raw)
-                log.info("recv  %s", data)
             except json.JSONDecodeError:
                 log.warning("recv non-json: %r", raw)
+                continue
+            # Typed input from the HUD text bar: same pipeline as speech.
+            # Broadcast it as a transcript so every client shows the line,
+            # then route it without blocking this receive loop.
+            if data.get("event") == "user-text":
+                typed = str(data.get("text", "")).strip()
+                if typed:
+                    log.info("typed  %r", typed)
+                    await broadcast({"event": "transcript", "text": typed, "source": "typed"})
+                    asyncio.create_task(process_utterance(typed))
+            else:
+                log.info("recv  %s", data)
     finally:
         connected_clients.discard(websocket)
         log.info("HUD disconnected  [%s]  (%d remaining)", client_id, len(connected_clients))
@@ -435,6 +470,14 @@ async def handle_transcription(audio_data: np.ndarray) -> None:
     if not text:
         return
 
+    await process_utterance(text)
+
+
+async def process_utterance(text: str) -> None:
+    """Route one utterance: local commands first, then the dispatcher, then
+    the conversational brain. Typed input from the HUD's text bar arrives
+    here exactly like a spoken transcript, same commands, same brain, same
+    spoken reply."""
     # Voice-switch commands are handled locally. No point spending a brain call
     # on "switch to piper".
     requested = _requested_backend(text)
@@ -609,8 +652,8 @@ def start_wake_listener() -> None:
         log.warning("model download step: %s", e)
 
     try:
-        log.info("loading wake word model: %s", WAKE_WORD)
-        wake_model = Model(wakeword_models=[WAKE_WORD], inference_framework="onnx")
+        log.info("loading wake word model: %s (%s)", WAKE_WORD, WAKE_MODEL_PATH.name)
+        wake_model = Model(wakeword_models=[str(WAKE_MODEL_PATH)], inference_framework="onnx")
     except Exception as e:
         log.error("failed to load wake word model: %s", e)
         log.error("wake detection disabled, WebSocket only")
@@ -632,6 +675,88 @@ def start_wake_listener() -> None:
         log.error("wake detection disabled, WebSocket only")
 
 
+async def watch_images() -> None:
+    """Broadcast new images dropped in IMAGE_DIR to the HUD as data URIs.
+
+    Files already present at boot are treated as seen, so a restart doesn't
+    replay the whole archive onto the screen. A file is only sent once its
+    size has stopped changing, so a slow download can't ship half an image.
+    """
+    import base64
+    import mimetypes
+
+    try:
+        IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        log.warning("image dir unavailable: %s", e)
+        return
+
+    def current() -> dict:
+        out = {}
+        for p in IMAGE_DIR.iterdir():
+            if p.suffix.lower() in IMAGE_EXTS:
+                try:
+                    out[p.name] = p.stat().st_mtime
+                except OSError:
+                    pass
+        return out
+
+    seen = current()
+    log.info("image watcher on %s  (%d existing ignored)", IMAGE_DIR, len(seen))
+
+    while True:
+        await asyncio.sleep(IMAGE_POLL_S)
+        try:
+            for name, mtime in current().items():
+                if seen.get(name) == mtime:
+                    continue
+                p = IMAGE_DIR / name
+                size_before = p.stat().st_size
+                await asyncio.sleep(0.6)
+                if not p.exists() or p.stat().st_size != size_before:
+                    continue  # still being written; catch it next pass
+                seen[name] = p.stat().st_mtime
+                if size_before > IMAGE_MAX_BYTES:
+                    log.warning("image %s skipped, %d bytes is too big for the HUD", name, size_before)
+                    continue
+                mime = mimetypes.guess_type(name)[0] or "image/png"
+                data = base64.b64encode(p.read_bytes()).decode("ascii")
+                log.info("image -> HUD  %s  (%d KB)", name, size_before // 1024)
+                await broadcast({
+                    "event": "show-image",
+                    "name": name,
+                    "data": f"data:{mime};base64,{data}",
+                })
+        except Exception as e:
+            log.warning("image watcher pass failed: %s", e)
+
+
+async def watch_sites() -> None:
+    """Probe the production sites and stream real UP/DOWN + latency to the HUD."""
+    import urllib.error
+    import urllib.request
+
+    def probe(url: str):
+        req = urllib.request.Request(url, headers={"User-Agent": "cletus-hud/1.0"})
+        t0 = time.time()
+        try:
+            with urllib.request.urlopen(req, timeout=6) as r:
+                r.read(64)
+            return True, int((time.time() - t0) * 1000)
+        except urllib.error.HTTPError:
+            # the server answered, even if it answered "no" - that is UP
+            return True, int((time.time() - t0) * 1000)
+        except Exception:
+            return False, None
+
+    loop = asyncio.get_running_loop()
+    while True:
+        for key, url in SITES:
+            up, ms = await loop.run_in_executor(None, probe, url)
+            await broadcast({"event": "site-status", "key": key, "up": up, "ms": ms})
+        await asyncio.sleep(SITE_POLL_S)
+
+
 async def main() -> None:
     global main_loop
     main_loop = asyncio.get_running_loop()
@@ -641,6 +766,8 @@ async def main() -> None:
     load_tts()
     load_whisper()
     start_wake_listener()
+    asyncio.create_task(watch_images())
+    asyncio.create_task(watch_sites())
 
     log.info("starting cletus voice service v%s on ws://%s:%d", VERSION, HOST, PORT)
     try:
