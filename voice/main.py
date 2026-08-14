@@ -23,7 +23,7 @@ from dispatcher import Dispatcher
 from tts import make_tts, PiperTts, ElevenLabsTts
 from text_utils import strip_markdown, clamp_for_speech
 
-VERSION = "0.10.2"
+VERSION = "0.10.3"
 PID_FILE = Path(__file__).parent / "cletus.pid"
 
 
